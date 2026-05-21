@@ -35,7 +35,6 @@ class AdsController extends Controller
         try {
             $ads = DB::table('ads')
                 ->orderByDesc('created_at')
-                ->limit(20)
                 ->get();
 
             return response()->json($ads);

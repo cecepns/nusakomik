@@ -6,12 +6,14 @@ import Login from "./pages/Login";
 import MangaDetail from "./pages/MangaDetail";
 import ChapterReader from "./pages/ChapterReader";
 import Library from "./pages/Library";
+import Popular from "./pages/Popular";
 import Content from "./pages/Content";
 import Contact from "./pages/Contact";
 import Akun from "./pages/Akun";
 import Leaderboard from "./pages/Leaderboard";
 import Premium from "./pages/Premium";
 import ProfileUser from "./pages/ProfileUser";
+import LandingPage from './pages/Landing'
 import ScrollToTop from "./components/ScrollToTop";
 import BottomNavigation from "./components/BottomNavigation";
 import AdPopup from "./components/AdPopup";
@@ -24,7 +26,7 @@ import "react-toastify/dist/ReactToastify.css";
 function AppContent() {
   const location = useLocation();
   const { user } = useAuth();
-  
+
   // Don't show AdPopup on admin and login routes
   const shouldShowAdPopup =
     !location.pathname.startsWith('/admin') &&
@@ -62,7 +64,20 @@ function AppContent() {
           path="/content"
           element={
             <>
-              <Content />
+              <Layout>
+                <Content />
+              </Layout>
+              <BottomNavigation />
+            </>
+          }
+        />
+        <Route
+          path="/populer"
+          element={
+            <>
+              <Layout>
+                <Popular />
+              </Layout>
               <BottomNavigation />
             </>
           }
@@ -133,6 +148,8 @@ function AppContent() {
     </>
   );
 }
+
+
 
 function App() {
   return (

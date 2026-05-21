@@ -1,4 +1,21 @@
 const db = require('../db');
+
+function mapLastChapterRow(row) {
+  const createdTs = parseInt(row.created_at_timestamp, 10) || 0;
+  const updatedRaw = row.updated_at_timestamp;
+  const updatedTs =
+    updatedRaw != null && updatedRaw !== '' ? parseInt(updatedRaw, 10) : null;
+  const chapter = {
+    number: row.number,
+    title: row.title,
+    slug: row.slug,
+    created_at: { time: createdTs },
+  };
+  if (updatedTs != null && !Number.isNaN(updatedTs)) {
+    chapter.updated_at = { time: updatedTs };
+  }
+  return chapter;
+}
 const { createShortLivedCache } = require('../utils/shortLivedCache');
 
 const featuredListCache = createShortLivedCache({ ttlMs: 30 * 1000, maxKeys: 48 });
@@ -93,7 +110,9 @@ async function fetchFeaturedPayload(req) {
           c.title,
           c.slug,
           c.created_at,
-          UNIX_TIMESTAMP(c.created_at) AS created_at_timestamp
+          c.updated_at,
+          UNIX_TIMESTAMP(c.created_at) AS created_at_timestamp,
+          UNIX_TIMESTAMP(c.updated_at) AS updated_at_timestamp
         FROM chapters c
         WHERE c.manga_id IN (${idPlaceholders})
         ORDER BY c.manga_id ASC, CAST(c.chapter_number AS UNSIGNED) DESC, c.created_at DESC
@@ -108,14 +127,7 @@ async function fetchFeaturedPayload(req) {
         if (acc[row.manga_id].length >= 3) {
           return acc;
         }
-        acc[row.manga_id].push({
-          number: row.number,
-          title: row.title,
-          slug: row.slug,
-          created_at: {
-            time: parseInt(row.created_at_timestamp, 10),
-          },
-        });
+        acc[row.manga_id].push(mapLastChapterRow(row));
         return acc;
       }, {});
     } catch (err) {

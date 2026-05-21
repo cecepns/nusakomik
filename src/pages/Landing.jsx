@@ -1,13 +1,13 @@
-import { useState } from "react";
-import { ExternalLink, Flame, BookOpen, Crown, Smartphone, Moon, Sun, ChevronDown, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Helmet } from "react-helmet-async";
+import { ExternalLink, Flame, BookOpen, HeartHandshake, Mail, Moon, Sun, ChevronDown, Sparkles } from "lucide-react";
 import logo from "../assets/logo.png";
 import discordIcon from "../assets/discord.svg";
-
 const ctaItems = [
   {
-    title: "Baca Manga",
+    title: "Baca Komik",
     subtitle: "Ribuan judul manga, manhwa & manhua gratis",
-    href: "https://02.komiknesia.asia/",
+    href: "https://id.nusakomik.com/",
     icon: BookOpen,
     iconWrapClass: "bg-cyan-100 ring-cyan-200",
     iconWrapClassDark: "bg-[#38bdf8] ring-[#38bdf8]",
@@ -17,27 +17,37 @@ const ctaItems = [
     badgeClass: "bg-amber-400 text-amber-900",
   },
   {
-    title: "Upgrade ke Premium",
-    subtitle: "Baca tanpa iklan & fitur eksklusif",
-    href: "https://02.komiknesia.asia/premium",
-    icon: Crown,
+    title: "Discord",
+    subtitle: "Komunitas pembaca & update info terbaru",
+    href: "https://discord.gg/3tGVDZCF3a",
+    customIcon: discordIcon,
+    iconWrapClass: "bg-[#5865F2] ring-[#7c85f7]",
+    iconWrapClassDark: "bg-[#5865F2] ring-[#7c85f7]",
+  },
+  {
+    title: "Contact Us",
+    subtitle: "Hubungi tim Nusakomik untuk bantuan",
+    href: "http://id.nusakomik.com/contact",
+    icon: Mail,
+    iconWrapClass: "bg-sky-100 ring-sky-200",
+    iconWrapClassDark: "bg-[#38bdf8] ring-[#38bdf8]",
+    iconClass: "text-sky-700",
+    iconClassDark: "text-white",
+  },
+  {
+    title: "Donasi",
+    subtitle: "Dukung Nusakomik lewat Saweria",
+    href: "https://saweria.co/NusaKomik",
+    icon: HeartHandshake,
     iconWrapClass: "bg-amber-100 ring-amber-300",
     iconWrapClassDark: "bg-[#facc15] ring-[#facc15]",
     iconClass: "text-amber-700",
     iconClassDark: "text-[#0f3b62]",
   },
-  {
-    title: "Join Discord",
-    subtitle: "Komunitas pembaca & update info terbaru",
-    href: "https://discord.gg/dgC22PSm9h",
-    customIcon: discordIcon,
-    iconWrapClass: "bg-[#5865F2] ring-[#7c85f7]",
-    iconWrapClassDark: "bg-[#5865F2] ring-[#7c85f7]",
-  },
   // {
   //   title: "Download Appnya",
   //   subtitle: "Baca manga lebih nyaman di aplikasi",
-  //   href: "https://02.komiknesia.asia/",
+  //   href: "https://id.nusakomik.com/",
   //   icon: Smartphone,
   //   iconWrapClass: "bg-emerald-100 ring-emerald-200",
   //   iconWrapClassDark: "bg-[#7dd3fc] ring-[#7dd3fc]",
@@ -73,50 +83,80 @@ const genreItems = [
 
 const faqItems = [
   {
-    question: "Apa itu Komiknesia?",
+    question: "Apa itu Nusakomik?",
     answer:
-      "Komiknesia adalah platform baca komik online yang menyediakan manga (Jepang), manhwa (Korea), dan manhua (China) dalam bahasa Indonesia secara gratis. Komiknesia telah dipercaya oleh ratusan ribu pembaca di seluruh Indonesia.",
+      "Nusakomik adalah platform baca komik online yang menyediakan manga (Jepang), manhwa (Korea), dan manhua (China) dalam bahasa Indonesia secara gratis. Nusakomik telah dipercaya oleh ratusan ribu pembaca di seluruh Indonesia.",
   },
   {
-    question: "Apakah Komiknesia gratis?",
+    question: "Apakah Nusakomik gratis?",
     answer:
-      "Ya! Kamu bisa membaca semua manga, manhwa, dan manhua di Komiknesia secara gratis. Tersedia juga opsi Premium untuk pengalaman tanpa iklan dan fitur eksklusif lainnya.",
+      "Ya! Kamu bisa membaca semua manga, manhwa, dan manhua di Nusakomik secara gratis. Tersedia juga opsi Premium untuk pengalaman tanpa iklan dan fitur eksklusif lainnya.",
   },
   {
-    question: "Apa domain resmi Komiknesia?",
+    question: "Apa domain resmi Nusakomik?",
     answer:
-      "Domain utama Komiknesia untuk baca manga adalah 02.komiknesia.asia. Hati-hati dengan domain lain yang mengatasnamakan Komiknesia dan pastikan kamu selalu mengakses domain resmi.",
+      "Domain utama Nusakomik untuk baca manga adalah 02.komiknesia.asia. Hati-hati dengan domain lain yang mengatasnamakan Nusakomik dan pastikan kamu selalu mengakses domain resmi.",
   },
   {
     question: "Genre apa saja yang tersedia?",
     answer:
-      "Komiknesia menyediakan banyak genre termasuk Action, Romance, Fantasy, Comedy, Slice of Life, Martial Arts, Isekai, Horror, Seinen, Shounen, dan masih banyak lagi.",
+      "Nusakomik menyediakan banyak genre termasuk Action, Romance, Fantasy, Comedy, Slice of Life, Martial Arts, Isekai, Horror, Seinen, Shounen, dan masih banyak lagi.",
   },
   {
-    question: "Bagaimana cara baca manga di Komiknesia?",
+    question: "Bagaimana cara baca manga di Nusakomik?",
     answer:
       'Sangat mudah! Klik tombol "Baca Manga" di atas, cari judul manga yang kamu inginkan, pilih chapter, dan mulai membaca. Kamu juga bisa memakai aplikasi Android untuk pengalaman membaca yang lebih nyaman.',
   },
   // {
-  //   question: "Apakah tersedia aplikasi Komiknesia?",
+  //   question: "Apakah tersedia aplikasi Nusakomik?",
   //   answer:
-  //     "Ya! Komiknesia tersedia dalam bentuk aplikasi Android yang bisa kamu download. Dengan aplikasi Komiknesia, kamu bisa membaca manga lebih nyaman dan mendapatkan notifikasi chapter terbaru.",
+  //     "Ya! Nusakomik tersedia dalam bentuk aplikasi Android yang bisa kamu download. Dengan aplikasi Nusakomik, kamu bisa membaca manga lebih nyaman dan mendapatkan notifikasi chapter terbaru.",
   // },
 ];
 
 const decorativeStars = [
-  { top: "8%", left: "10%", size: 16, rotate: "-12deg" },
-  { top: "14%", right: "8%", size: 14, rotate: "8deg" },
-  { top: "32%", left: "6%", size: 12, rotate: "20deg" },
-  { top: "42%", right: "12%", size: 18, rotate: "-10deg" },
-  { top: "58%", left: "9%", size: 14, rotate: "15deg" },
-  { top: "73%", right: "7%", size: 12, rotate: "-6deg" },
-  { top: "86%", left: "12%", size: 16, rotate: "12deg" },
+  { top: "6%", left: "8%", size: 18, rotate: "-12deg" },
+  { top: "12%", right: "7%", size: 17, rotate: "8deg" },
+  { top: "20%", left: "16%", size: 15, rotate: "-6deg" },
+  { top: "27%", right: "14%", size: 16, rotate: "14deg" },
+  { top: "34%", left: "5%", size: 14, rotate: "20deg" },
+  { top: "43%", right: "11%", size: 20, rotate: "-10deg" },
+  { top: "51%", left: "13%", size: 16, rotate: "11deg" },
+  { top: "59%", right: "6%", size: 18, rotate: "-15deg" },
+  { top: "67%", left: "7%", size: 15, rotate: "15deg" },
+  { top: "76%", right: "10%", size: 14, rotate: "-6deg" },
+  { top: "84%", left: "11%", size: 18, rotate: "12deg" },
+  { top: "91%", right: "15%", size: 16, rotate: "-8deg" },
 ];
+
+function loadHistatsEmbed() {
+  if (typeof window === "undefined") return;
+
+  window._Hasync = window._Hasync || [];
+  window._Hasync.push(["Histats.start", "1,5027005,4,387,112,48,00010110"]);
+  window._Hasync.push(["Histats.fasi", "1"]);
+  window._Hasync.push(["Histats.track_hits", ""]);
+  window._Hasync.push(["Histats.framed_page", ""]);
+
+  if (!window.__histatsScriptAdded) {
+    window.__histatsScriptAdded = true;
+    const hs = document.createElement("script");
+    hs.type = "text/javascript";
+    hs.async = true;
+    hs.src = "//s10.histats.com/js15_as.js";
+    (document.head || document.body).appendChild(hs);
+  } else {
+    window._Hasync.push(["Histats.fasi", "1"]);
+  }
+}
 
 const Landing = () => {
   const [isLightMode, setIsLightMode] = useState(false);
   const [openFaqItems, setOpenFaqItems] = useState(() => new Set([faqItems[0]?.question]));
+
+  useEffect(() => {
+    loadHistatsEmbed();
+  }, []);
 
   const allFaqOpen = openFaqItems.size === faqItems.length;
 
@@ -145,6 +185,9 @@ const Landing = () => {
         isLightMode ? "bg-white text-gray-900" : "bg-gray-950 text-gray-100"
       }`}
     >
+      <Helmet>
+        <title>NusaKomik - Situs Terbaik Baca Komik Tanpa Iklan</title>
+      </Helmet>
       <div
         className={`pointer-events-none absolute inset-0 ${
           isLightMode
@@ -153,11 +196,7 @@ const Landing = () => {
         }`}
       />
       <div
-        className={`pointer-events-none absolute inset-0 [background-size:36px_36px] ${
-          isLightMode
-            ? "opacity-10 [background-image:radial-gradient(circle,rgba(2,6,23,0.2)_1px,transparent_1px)]"
-            : "opacity-15 [background-image:radial-gradient(circle,rgba(255,255,255,0.25)_1px,transparent_1px)]"
-        }`}
+        className="pointer-events-none fixed inset-0 z-0 opacity-50 [--card-border:rgba(66,165,245,0.12)] [background-image:linear-gradient(var(--card-border)_1px,transparent_1px),linear-gradient(90deg,var(--card-border)_1px,transparent_1px)] [background-size:48px_48px]"
       />
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {decorativeStars.map((star, index) => (
@@ -165,7 +204,7 @@ const Landing = () => {
             key={`${star.top}-${index}`}
             viewBox="0 0 24 24"
             aria-hidden="true"
-            className={`${isLightMode ? "text-amber-400/70" : "text-yellow-300/70"} absolute`}
+            className={`${isLightMode ? "text-amber-400/70" : "text-yellow-300/70"} absolute animate-[pulse_3s_ease-in-out_infinite]`}
             style={{
               top: star.top,
               left: star.left,
@@ -173,6 +212,7 @@ const Landing = () => {
               width: `${star.size}px`,
               height: `${star.size}px`,
               transform: `rotate(${star.rotate})`,
+              animationDelay: `${index * 220}ms`,
             }}
           >
             <path
@@ -197,7 +237,7 @@ const Landing = () => {
           {isLightMode ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
         </button>
 
-        <img src={logo} alt="KomikNesia" className="w-44 sm:w-56" />
+        <img src={logo} alt="Nusakomik" className="w-44 sm:w-56" />
 
         <div
           className={`mt-5 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold ring-1 sm:text-sm ${
@@ -220,7 +260,7 @@ const Landing = () => {
                 href={item.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`group flex w-full items-center justify-between rounded-3xl border px-4 py-4 shadow-[0_7px_0_0_#dc2626] transition-all duration-200 hover:-translate-y-0.5 ${
+                className={`group flex w-full items-center justify-between rounded-3xl border px-4 py-4 shadow-[0_7px_0_0_#42a5f5] transition-all duration-200 hover:-translate-y-0.5 ${
                   isLightMode
                     ? "border-sky-300/70 bg-white/95 hover:bg-sky-50"
                     : "border-cyan-200/40 bg-[#0b355f]/95 hover:bg-[#124777]"
@@ -279,7 +319,7 @@ const Landing = () => {
         </div>
 
         <div
-          className={`mt-8 grid w-full grid-cols-3 gap-3 rounded-3xl border p-4 shadow-[0_7px_0_0_#dc2626] ${
+          className={`mt-8 grid w-full grid-cols-3 gap-3 rounded-3xl border p-4 shadow-[0_7px_0_0_#facc15] ${
             isLightMode
               ? "border-sky-300/60 bg-white/95"
               : "border-cyan-200/30 bg-[#0b355f]/90"
@@ -302,16 +342,16 @@ const Landing = () => {
 
         <div className="mt-8 w-full space-y-5">
           <section
-            className={`rounded-3xl border p-5 shadow-[0_7px_0_0_#dc2626] sm:p-6 ${
+            className={`rounded-3xl border p-5 shadow-[0_7px_0_0_#facc15] sm:p-6 ${
               isLightMode ? "border-sky-300/60 bg-white/95" : "border-cyan-200/30 bg-[#0b355f]/90"
             }`}
           >
             <h2 className={`text-2xl font-extrabold ${isLightMode ? "text-[#163a5f]" : "text-cyan-50"}`}>
-              Apa itu Komiknesia? <span className="align-middle">🎌</span>
+              Apa itu Nusakomik? <span className="align-middle">🎌</span>
             </h2>
             <p className={`mt-3 text-sm leading-7 sm:text-base ${isLightMode ? "text-sky-900/80" : "text-cyan-100/80"}`}>
-              Komiknesia adalah platform baca manga, manhwa, dan manhua online berbahasa Indonesia yang paling
-              lengkap dan terupdate. Dengan ribuan judul dari berbagai genre, Komiknesia menjadi pilihan utama para
+              Nusakomik adalah platform baca manga, manhwa, dan manhua online berbahasa Indonesia yang paling
+              lengkap dan terupdate. Dengan ribuan judul dari berbagai genre, Nusakomik menjadi pilihan utama para
               pecinta komik Jepang, Korea, dan China di Indonesia.
             </p>
             <p className={`mt-3 text-sm leading-7 sm:text-base ${isLightMode ? "text-sky-900/80" : "text-cyan-100/80"}`}>
@@ -322,7 +362,7 @@ const Landing = () => {
           </section>
 
           <section
-            className={`rounded-3xl border p-5 shadow-[0_7px_0_0_#dc2626] sm:p-6 ${
+            className={`rounded-3xl border p-5 shadow-[0_7px_0_0_#facc15] sm:p-6 ${
               isLightMode ? "border-sky-300/60 bg-white/95" : "border-cyan-200/30 bg-[#0b355f]/90"
             }`}
           >
@@ -336,7 +376,7 @@ const Landing = () => {
               {genreItems.map((genre) => (
                 <span
                   key={genre}
-                  className={`cursor-pointer rounded-full px-3 py-1 text-xs font-semibold transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md sm:text-sm ${
+                  className={`cursor-pointer rounded-full px-3 py-1 text-xs font-semibold transition-all duration-200 hover:-translate-y-0.5 sm:text-sm ${
                     isLightMode
                       ? "bg-sky-100 text-sky-700 ring-1 ring-sky-200 hover:bg-sky-600 hover:text-white hover:ring-sky-600"
                       : "bg-[#0a2d52] text-cyan-100 ring-1 ring-cyan-200/30 hover:bg-cyan-500 hover:text-slate-950 hover:ring-cyan-300"
@@ -349,12 +389,12 @@ const Landing = () => {
           </section>
 
           <section
-            className={`rounded-3xl border p-5 shadow-[0_7px_0_0_#dc2626] sm:p-6 ${
+            className={`rounded-3xl border p-5 shadow-[0_7px_0_0_#facc15] sm:p-6 ${
               isLightMode ? "border-sky-300/60 bg-white/95" : "border-cyan-200/30 bg-[#0b355f]/90"
             }`}
           >
             <h2 className={`text-2xl font-extrabold ${isLightMode ? "text-[#163a5f]" : "text-cyan-50"}`}>
-              Kenapa Komiknesia? <span className="align-middle">⚡</span>
+              Kenapa Nusakomik? <span className="align-middle">⚡</span>
             </h2>
             <ul className={`mt-4 space-y-3 text-sm leading-7 sm:text-base ${isLightMode ? "text-sky-900/80" : "text-cyan-100/80"}`}>
               <li>📚 <strong>Koleksi Terlengkap</strong> — Ribuan judul manga, manhwa (komik Korea), dan manhua (komik China) tersedia dalam bahasa Indonesia.</li>
@@ -367,7 +407,7 @@ const Landing = () => {
           </section>
 
           <section
-            className={`rounded-3xl border p-5 shadow-[0_7px_0_0_#dc2626] sm:p-6 ${
+            className={`rounded-3xl border p-5 shadow-[0_7px_0_0_#facc15] sm:p-6 ${
               isLightMode ? "border-sky-300/60 bg-white/95" : "border-cyan-200/30 bg-[#0b355f]/90"
             }`}
           >
@@ -434,29 +474,45 @@ const Landing = () => {
           </section>
 
           <section
-            className={`rounded-3xl border p-5 shadow-[0_7px_0_0_#dc2626] sm:p-6 ${
+            className={`rounded-3xl border p-5 shadow-[0_7px_0_0_#facc15] sm:p-6 ${
               isLightMode ? "border-sky-300/60 bg-white/95" : "border-cyan-200/30 bg-[#0b355f]/90"
             }`}
           >
             <h2 className={`text-2xl font-extrabold ${isLightMode ? "text-[#163a5f]" : "text-cyan-50"}`}>
-              Baca Manga Bahasa Indonesia di Komiknesia <span className="align-middle">📖</span>
+              Baca Manga Bahasa Indonesia di Nusakomik <span className="align-middle">📖</span>
             </h2>
             <p className={`mt-3 text-sm leading-7 sm:text-base ${isLightMode ? "text-sky-900/80" : "text-cyan-100/80"}`}>
-              Mencari tempat baca manga bahasa Indonesia yang lengkap dan gratis? Komiknesia hadir sebagai solusi untuk
+              Mencari tempat baca manga bahasa Indonesia yang lengkap dan gratis? Nusakomik hadir sebagai solusi untuk
               kamu yang ingin menikmati komik Jepang, manhwa Korea, dan manhua China dengan terjemahan bahasa
               Indonesia berkualitas.
             </p>
             <p className={`mt-3 text-sm leading-7 sm:text-base ${isLightMode ? "text-sky-900/80" : "text-cyan-100/80"}`}>
-              Di Komiknesia, kamu bisa menemukan judul-judul populer yang selalu update setiap hari. Dari genre
-              action, romance, fantasy, hingga slice of life semuanya tersedia lengkap. Komiknesia juga mendukung
+              Di Nusakomik, kamu bisa menemukan judul-judul populer yang selalu update setiap hari. Dari genre
+              action, romance, fantasy, hingga slice of life semuanya tersedia lengkap. Nusakomik juga mendukung
               fitur pencarian canggih, filter berdasarkan genre dan status, serta sistem bookmark agar kamu tidak
               pernah kehilangan jejak bacaanmu.
             </p>
             <p className={`mt-3 text-sm leading-7 sm:text-base ${isLightMode ? "text-sky-900/80" : "text-cyan-100/80"}`}>
-              Bergabunglah dengan komunitas Komiknesia di Discord untuk berdiskusi, mendapatkan rekomendasi, dan
+              Bergabunglah dengan komunitas Nusakomik di Discord untuk berdiskusi, mendapatkan rekomendasi, dan
               selalu update dengan informasi terbaru seputar manga, manhwa, dan manhua favoritmu.
             </p>
           </section>
+        </div>
+
+        {/* Histats.com — paling bawah */}
+        <div
+          className={`mt-10 flex w-full flex-col items-center rounded-2xl border px-4 py-4 text-center ${
+            isLightMode
+              ? "border-sky-300/60 bg-white/95"
+              : "border-cyan-200/30 bg-[#0b355f]/90"
+          }`}
+        >
+          <div id="histats_counter" className="min-h-[48px]" />
+          <noscript>
+            <a href="/" target="_blank" rel="noopener noreferrer">
+              <img src="//sstatic1.histats.com/0.gif?5027005&101" alt="" border={0} />
+            </a>
+          </noscript>
         </div>
       </section>
     </main>

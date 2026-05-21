@@ -375,7 +375,7 @@ const Leaderboard = () => {
         </div>
       </div>
 
-      <LiveChatWidget />
+      {/* <LiveChatWidget /> */}
     </div>
   );
 };

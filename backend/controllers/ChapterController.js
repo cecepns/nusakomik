@@ -1,4 +1,5 @@
 const db = require('../db');
+const { recordMangaViewEvent } = require('../utils/recordMangaViewEvent');
 const { upload } = require('../middlewares/upload'); // used in routes, not here
 const { deleteFile } = require('../utils/files'); // adjust path if needed
 const { uploadFileToS3 } = require('../utils/s3Upload');
@@ -45,6 +46,17 @@ const showBySlug = async (req, res) => {
     if (chapters.length > 0) {
       const chapter = chapters[0];
 
+      try {
+        await db.execute(
+          'UPDATE chapters SET views = COALESCE(views, 0) + 1, updated_at = updated_at WHERE id = ?',
+          [chapter.id]
+        );
+      } catch (viewErr) {
+        console.warn('Chapter view increment failed:', viewErr.message);
+      }
+
+      await recordMangaViewEvent(chapter.manga_id);
+
       if (chapter.is_input_manual) {
         const [images] = await db.execute(
           `
@@ -65,7 +77,11 @@ const showBySlug = async (req, res) => {
             c.title,
             c.slug,
             c.created_at,
-            UNIX_TIMESTAMP(c.created_at) as created_at_timestamp
+            UNIX_TIMESTAMP(c.created_at) as created_at_timestamp,
+            COALESCE(c.views, 0) AS views,
+            (
+              SELECT COUNT(*) FROM chapter_reactions cr WHERE cr.chapter_id = c.id
+            ) AS reaction_count
           FROM chapters c
           WHERE c.manga_id = ?
           ORDER BY CAST(c.chapter_number AS UNSIGNED) DESC, c.chapter_number DESC
@@ -112,6 +128,8 @@ const showBySlug = async (req, res) => {
             number: ch.number,
             title: ch.title || `Chapter ${ch.number}`,
             slug: ch.slug,
+            views: Number(ch.views) || 0,
+            reaction_count: Number(ch.reaction_count) || 0,
             created_at: {
               time: parseInt(ch.created_at_timestamp, 10),
               formatted: new Date(ch.created_at).toLocaleString('id-ID'),

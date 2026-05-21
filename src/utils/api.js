@@ -5,8 +5,8 @@
 
 // export const API_BASE_URL = 'https://be-api-node.komiknesia.net//api';
 // export const API_BASE_URL_WITHOUT_API = 'https://be-api-node.komiknesia.net/';
-export const API_BASE_URL = 'https://api-be.komiknesia.my.id/api';
-export const API_BASE_URL_WITHOUT_API = 'https://api-be.komiknesia.my.id/';
+export const API_BASE_URL = 'https://api-be.nusakomik.com/api';
+export const API_BASE_URL_WITHOUT_API = 'https://api-be.nusakomik.com/';
 
 /** Origin for static files (no trailing slash). Same host as API, path /uploads is served by backend. */
 const STATIC_ORIGIN = API_BASE_URL_WITHOUT_API.replace(/\/+$/, '');
@@ -312,6 +312,51 @@ class APIClient {
     return this.request(`/bookmarks/check/${encodeURIComponent(mangaIdOrSlug)}`);
   }
 
+  // Readlists (requires auth)
+  getReadlists() {
+    return this.request('/readlists');
+  }
+
+  createReadlist(body) {
+    return this.request('/readlists', {
+      method: 'POST',
+      body,
+    });
+  }
+
+  getReadlist(id) {
+    return this.request(`/readlists/${encodeURIComponent(id)}`);
+  }
+
+  updateReadlist(id, body) {
+    return this.request(`/readlists/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body,
+    });
+  }
+
+  deleteReadlist(id) {
+    return this.request(`/readlists/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  addReadlistItems(id, body) {
+    return this.request(`/readlists/${encodeURIComponent(id)}/items`, {
+      method: 'POST',
+      body,
+    });
+  }
+
+  removeReadlistItem(readlistId, mangaIdOrSlug) {
+    return this.request(
+      `/readlists/${encodeURIComponent(readlistId)}/items/${encodeURIComponent(mangaIdOrSlug)}`,
+      {
+        method: 'DELETE',
+      },
+    );
+  }
+
   // Comments
   getComments(params) {
     const q = new URLSearchParams(params).toString();
@@ -403,6 +448,17 @@ class APIClient {
     return this.request('/votes', {
       method: 'POST',
       body: { slug, vote_type },
+    });
+  }
+
+  getChapterReactions(chapterSlug) {
+    return this.request(`/chapter-reactions/${encodeURIComponent(chapterSlug)}`);
+  }
+
+  submitChapterReaction(chapterSlug, reaction_type) {
+    return this.request('/chapter-reactions', {
+      method: 'POST',
+      body: { slug: chapterSlug, reaction_type },
     });
   }
 
@@ -862,6 +918,7 @@ class APIClient {
     if (params.type) queryParams.append('type', params.type);
     if (params.orderBy) queryParams.append('orderBy', params.orderBy);
     if (params.project) queryParams.append('project', params.project);
+    if (params.popularWindow) queryParams.append('popularWindow', params.popularWindow);
     
     const queryString = queryParams.toString();
     return this.request(`/contents${queryString ? `?${queryString}` : ''}`);

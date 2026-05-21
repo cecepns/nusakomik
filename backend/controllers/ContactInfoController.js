@@ -1,5 +1,11 @@
 const db = require('../db');
 
+function nullIfEmpty(v) {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+}
+
 const show = async (req, res) => {
   try {
     const { active } = req.query;
@@ -29,7 +35,16 @@ const show = async (req, res) => {
 
 const store = async (req, res) => {
   try {
-    const { email, whatsapp, description, is_active = true } = req.body;
+    const {
+      email,
+      whatsapp,
+      description,
+      telegram_url,
+      tiktok_url,
+      instagram_url,
+      facebook_url,
+      is_active = true,
+    } = req.body;
 
     if (!email || !whatsapp) {
       return res.status(400).json({ error: 'Email and WhatsApp are required' });
@@ -38,8 +53,17 @@ const store = async (req, res) => {
     await db.execute('UPDATE contact_info SET is_active = FALSE WHERE is_active = TRUE');
 
     const [result] = await db.execute(
-      'INSERT INTO contact_info (email, whatsapp, description, is_active) VALUES (?, ?, ?, ?)',
-      [email, whatsapp, description || null, is_active]
+      'INSERT INTO contact_info (email, whatsapp, description, telegram_url, tiktok_url, instagram_url, facebook_url, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        email,
+        whatsapp,
+        description || null,
+        nullIfEmpty(telegram_url),
+        nullIfEmpty(tiktok_url),
+        nullIfEmpty(instagram_url),
+        nullIfEmpty(facebook_url),
+        is_active,
+      ]
     );
 
     res.status(201).json({ id: result.insertId, message: 'Contact info created successfully' });
@@ -52,7 +76,16 @@ const store = async (req, res) => {
 const update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { email, whatsapp, description, is_active } = req.body;
+    const {
+      email,
+      whatsapp,
+      description,
+      telegram_url,
+      tiktok_url,
+      instagram_url,
+      facebook_url,
+      is_active,
+    } = req.body;
 
     const updates = [];
     const params = [];
@@ -70,6 +103,26 @@ const update = async (req, res) => {
     if (description !== undefined) {
       updates.push('description = ?');
       params.push(description);
+    }
+
+    if (telegram_url !== undefined) {
+      updates.push('telegram_url = ?');
+      params.push(nullIfEmpty(telegram_url));
+    }
+
+    if (tiktok_url !== undefined) {
+      updates.push('tiktok_url = ?');
+      params.push(nullIfEmpty(tiktok_url));
+    }
+
+    if (instagram_url !== undefined) {
+      updates.push('instagram_url = ?');
+      params.push(nullIfEmpty(instagram_url));
+    }
+
+    if (facebook_url !== undefined) {
+      updates.push('facebook_url = ?');
+      params.push(nullIfEmpty(facebook_url));
     }
 
     if (is_active !== undefined) {

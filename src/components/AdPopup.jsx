@@ -105,9 +105,19 @@ const AdPopup = () => {
         if (state.lastShownCycle !== cycleIndex) {
           state.lastShownCycle = cycleIndex;
           writeTimingState(state);
-          setIsOpen(true);
-          setCanClose(false);
-          setCountdown(UNLOCK_SECONDS);
+          if (elapsedMs < UNLOCK_MS) {
+            const remainingSeconds = Math.max(
+              0,
+              UNLOCK_SECONDS - Math.floor(elapsedMs / 1000)
+            );
+            setIsOpen(true);
+            setCanClose(false);
+            setCountdown(remainingSeconds);
+          } else {
+            if (isOpenRef.current) setIsOpen(false);
+            setCanClose(false);
+            setCountdown(UNLOCK_SECONDS);
+          }
           return;
         }
 
@@ -123,14 +133,9 @@ const AdPopup = () => {
           UNLOCK_SECONDS - Math.floor(elapsedMs / 1000)
         );
 
-        if (!isOpenRef.current) setIsOpen(true);
-
+        setIsOpen(true);
         setCanClose(remainingSeconds === 0);
         setCountdown(remainingSeconds);
-
-        if (remainingSeconds === 0 && isOpenRef.current) {
-          setIsOpen(false);
-        }
       } catch (error) {
         console.error('Error handling ad popup slot timing:', error);
         if (!isOpenRef.current) {
@@ -194,7 +199,7 @@ const AdPopup = () => {
     return null;
   }
 
-  const displayAds = ads.slice(0, 6);
+  const displayAds = ads;
 
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col w-full h-full bg-slate-800">
@@ -207,7 +212,7 @@ const AdPopup = () => {
           ) : (
             <span />
           )}
-          <button
+          {/* <button
             onClick={handlePremiumClick}
             className={`px-3 py-1.5 rounded text-white text-sm font-medium transition-opacity ${
               canClose ? 'opacity-100 cursor-pointer bg-amber-600 hover:bg-amber-700' : 'opacity-100 cursor-pointer bg-amber-600/80 hover:bg-amber-700'
@@ -215,7 +220,7 @@ const AdPopup = () => {
             aria-label="Beli premium"
           >
             Beli Premium
-          </button>
+          </button> */}
         </div>
 
         {/* Mobile: 1 kolom 6 baris sama tinggi, jarak antar banner. Desktop: 2 kolom × 3 baris */}

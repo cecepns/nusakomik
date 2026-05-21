@@ -1,5 +1,22 @@
 const db = require('../db');
 
+function mapLastChapterRow(row) {
+  const createdTs = parseInt(row.created_at_timestamp, 10) || 0;
+  const updatedRaw = row.updated_at_timestamp;
+  const updatedTs =
+    updatedRaw != null && updatedRaw !== '' ? parseInt(updatedRaw, 10) : null;
+  const chapter = {
+    number: row.number,
+    title: row.title,
+    slug: row.slug,
+    created_at: { time: createdTs },
+  };
+  if (updatedTs != null && !Number.isNaN(updatedTs)) {
+    chapter.updated_at = { time: updatedTs };
+  }
+  return chapter;
+}
+
 async function fetchLocalManga(filters) {
   const {
     q,
@@ -136,7 +153,9 @@ async function fetchLocalManga(filters) {
           c.title,
           c.slug,
           c.created_at,
-          UNIX_TIMESTAMP(c.created_at) AS created_at_timestamp
+          c.updated_at,
+          UNIX_TIMESTAMP(c.created_at) AS created_at_timestamp,
+          UNIX_TIMESTAMP(c.updated_at) AS updated_at_timestamp
         FROM (
           SELECT
             manga_id,
@@ -153,14 +172,7 @@ async function fetchLocalManga(filters) {
     );
 
     lastChapterByMangaId = lastChapterRows.reduce((acc, row) => {
-      acc[row.manga_id] = {
-        number: row.number,
-        title: row.title,
-        slug: row.slug,
-        created_at: {
-          time: parseInt(row.created_at_timestamp, 10),
-        },
-      };
+      acc[row.manga_id] = mapLastChapterRow(row);
       return acc;
     }, {});
   } catch (err) {

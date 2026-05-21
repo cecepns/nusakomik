@@ -38,6 +38,10 @@ class ContactInfoController extends Controller
             $email = $request->input('email');
             $whatsapp = $request->input('whatsapp');
             $description = $request->input('description');
+            $telegramUrl = $request->input('telegram_url');
+            $tiktokUrl = $request->input('tiktok_url');
+            $instagramUrl = $request->input('instagram_url');
+            $facebookUrl = $request->input('facebook_url');
             $isActive = $request->input('is_active', true);
 
             if (!$email || !$whatsapp) {
@@ -48,10 +52,23 @@ class ContactInfoController extends Controller
                 ->where('is_active', true)
                 ->update(['is_active' => false]);
 
+            $nullIfEmpty = function ($v) {
+                if ($v === null || $v === '') {
+                    return null;
+                }
+                $s = trim((string) $v);
+
+                return $s === '' ? null : $s;
+            };
+
             $id = DB::table('contact_info')->insertGetId([
                 'email' => $email,
                 'whatsapp' => $whatsapp,
                 'description' => $description ?: null,
+                'telegram_url' => $nullIfEmpty($telegramUrl),
+                'tiktok_url' => $nullIfEmpty($tiktokUrl),
+                'instagram_url' => $nullIfEmpty($instagramUrl),
+                'facebook_url' => $nullIfEmpty($facebookUrl),
                 'is_active' => (bool) $isActive,
             ]);
 
@@ -70,9 +87,22 @@ class ContactInfoController extends Controller
             $email = $request->input('email');
             $whatsapp = $request->input('whatsapp');
             $description = $request->input('description');
+            $telegramUrl = $request->input('telegram_url');
+            $tiktokUrl = $request->input('tiktok_url');
+            $instagramUrl = $request->input('instagram_url');
+            $facebookUrl = $request->input('facebook_url');
             $isActive = $request->input('is_active');
 
             $updates = [];
+
+            $nullIfEmpty = function ($v) {
+                if ($v === null) {
+                    return null;
+                }
+                $s = trim((string) $v);
+
+                return $s === '' ? null : $s;
+            };
 
             if ($email !== null) {
                 $updates['email'] = $email;
@@ -84,6 +114,22 @@ class ContactInfoController extends Controller
 
             if ($description !== null) {
                 $updates['description'] = $description;
+            }
+
+            if ($telegramUrl !== null) {
+                $updates['telegram_url'] = $nullIfEmpty($telegramUrl);
+            }
+
+            if ($tiktokUrl !== null) {
+                $updates['tiktok_url'] = $nullIfEmpty($tiktokUrl);
+            }
+
+            if ($instagramUrl !== null) {
+                $updates['instagram_url'] = $nullIfEmpty($instagramUrl);
+            }
+
+            if ($facebookUrl !== null) {
+                $updates['facebook_url'] = $nullIfEmpty($facebookUrl);
             }
 
             if ($isActive !== null) {

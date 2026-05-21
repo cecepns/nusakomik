@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HelmetProvider } from 'react-helmet-async'
+import { registerSW } from 'virtual:pwa-register'
 import App from './App.jsx'
 import './index.css'
 
@@ -8,7 +9,7 @@ const hostname = window.location.hostname;
 const isLocalhost =
   hostname === 'localhost' || hostname === '127.0.0.1';
 
-const allowedHosts = ['02.komiknesia.asia', 'komiknesia.vercel.app'];
+const allowedHosts = ['id.nusakomik.com', 'komiknesia.vercel.app'];
 const isAllowedHost =
   isLocalhost ||
   allowedHosts.some((h) => hostname === h || hostname.endsWith(`.${h}`)) ||
@@ -19,14 +20,17 @@ if (!isAllowedHost) {
   throw new Error('Blocked domain');
 }
 
-// Initialize theme before app renders
+// Initialize theme before app renders (must match useTheme / Header)
 const savedTheme = localStorage.getItem('komiknesia-theme');
-const theme = savedTheme || 'dark'; // Default to dark
-if (theme === 'dark') {
-  document.documentElement.classList.add('dark');
-} else {
+if (savedTheme === 'light') {
   document.documentElement.classList.remove('dark');
+} else {
+  document.documentElement.classList.add('dark');
 }
+
+registerSW({
+  immediate: true,
+})
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

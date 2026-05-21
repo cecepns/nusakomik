@@ -1,0 +1,172 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
+import LazyImage from "../components/LazyImage";
+import AdBanner from "../components/AdBanner";
+import { useAds } from "../hooks/useAds";
+import { apiClient, getImageUrl } from "../utils/api";
+
+const SECTIONS = [
+  { type: "manhwa", title: "Manhwa", subtitle: "50 komik populer (Korea)" },
+  { type: "manga", title: "Manga", subtitle: "50 komik populer (Jepang)" },
+  { type: "manhua", title: "Manhua", subtitle: "50 komik populer (China)" },
+];
+
+const Popular = () => {
+  const navigate = useNavigate();
+  const { ads: popularTopAds } = useAds("popular-top");
+  const { ads: popularFooterAds } = useAds("popular-footer");
+  const [lists, setLists] = useState({ manhwa: [], manga: [], manhua: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [manhwaRes, mangaRes, manhuaRes] = await Promise.all(
+          SECTIONS.map((s) =>
+            apiClient.getContents({
+              type: s.type,
+              orderBy: "Popular",
+              per_page: 50,
+              page: 1,
+            })
+          )
+        );
+        if (cancelled) return;
+        setLists({
+          manhwa: manhwaRes.data || [],
+          manga: mangaRes.data || [],
+          manhua: manhuaRes.data || [],
+        });
+      } catch (e) {
+        console.error("Popular page fetch:", e);
+        if (!cancelled) {
+          setError("Gagal memuat daftar populer.");
+          setLists({ manhwa: [], manga: [], manhua: [] });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-transparent text-gray-900 dark:text-gray-100">
+      <Helmet>
+        <title>Populer | KomikNesia</title>
+        <meta
+          name="description"
+          content="Daftar komik populer: Manhwa, Manga, dan Manhua — masing-masing 50 judul teratas di KomikNesia."
+        />
+      </Helmet>
+
+      <div className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:px-8 md:pt-8">
+        <header className="mb-10 text-left">
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100 md:text-3xl">
+            Halaman populer
+          </h1>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 md:text-base">
+            Manhwa, Manga, dan Manhua populer.
+          </p>
+        </header>
+
+        {popularTopAds.length > 0 && (
+          <div className="mb-8">
+            <AdBanner ads={popularTopAds} layout="grid" columns={2} />
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-red-500" />
+            <p className="mt-4 text-gray-500 dark:text-gray-400">Memuat...</p>
+          </div>
+        ) : error ? (
+          <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-center text-red-700 dark:text-red-300">
+            {error}
+          </p>
+        ) : (
+          <div className="space-y-14 md:space-y-16">
+            {SECTIONS.map(({ type, title, subtitle }) => {
+              const items = lists[type] || [];
+              return (
+                <section key={type} aria-labelledby={`popular-${type}`}>
+                  <div className="mb-5 border-b border-gray-200 pb-3 dark:border-white/10">
+                    <h2
+                      id={`popular-${type}`}
+                      className="text-xl font-bold text-gray-900 dark:text-gray-100 md:text-2xl"
+                    >
+                      {title}
+                    </h2>
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      {subtitle}
+                    </p>
+                  </div>
+                  {items.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-gray-300 py-8 text-center text-gray-500 dark:border-white/20 dark:text-gray-400">
+                      Tidak ada data {title}.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                      {items.map((manga) => (
+                        <button
+                          key={manga.id}
+                          type="button"
+                          onClick={() => navigate(`/komik/${manga.slug}`)}
+                          className="group cursor-pointer overflow-hidden rounded-lg border border-gray-200 bg-white text-left shadow-md transition-all hover:shadow-xl dark:border-white/10 dark:bg-white/[0.06]"
+                        >
+                          <div className="relative aspect-[3/4] overflow-hidden">
+                            <LazyImage
+                              src={getImageUrl(manga.cover)}
+                              alt={manga.title}
+                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
+                              wrapperClassName="h-full w-full"
+                            />
+                            {manga.rating > 0 && (
+                              <div className="absolute left-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-yellow-500/95 text-[11px] font-bold leading-none text-white shadow-lg backdrop-blur-sm">
+                                {Number(manga.rating).toFixed(1)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex min-h-[4.5rem] flex-col p-2.5 sm:p-3">
+                            {!!manga.hot && (
+                              <span className="mb-1 max-w-fit rounded-full bg-red-500/90 px-2 py-0.5 text-[10px] font-bold text-white sm:text-xs">
+                                HOT
+                              </span>
+                            )}
+                            <h3 className="line-clamp-2 text-xs font-bold text-gray-900 dark:text-gray-100 sm:text-sm">
+                              {manga.title}
+                            </h3>
+                            <span className="mt-auto pt-1 text-[10px] text-gray-500 dark:text-gray-400 sm:text-xs">
+                              Ch.{" "}
+                              {manga.lastChapters?.[0]?.number ?? "—"}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        )}
+
+        {popularFooterAds.length > 0 && (
+          <div className="mt-10">
+            <AdBanner ads={popularFooterAds} layout="grid" columns={2} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default Popular;

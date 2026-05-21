@@ -1,20 +1,20 @@
 import { useState, useEffect } from 'react';
 
+function readStoredTheme() {
+  const saved = localStorage.getItem('komiknesia-theme');
+  if (saved === 'light') return 'light';
+  if (saved === 'dark') return 'dark';
+  return 'dark';
+}
+
 export const useTheme = () => {
-  const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem('komiknesia-theme');
-    // Default to 'dark' if nothing is saved
-    return saved || 'dark';
-  });
+  const [theme, setTheme] = useState(readStoredTheme);
 
   useEffect(() => {
-    // Only save dark mode to localStorage, don't save light mode
+    localStorage.setItem('komiknesia-theme', theme);
     if (theme === 'dark') {
-      localStorage.setItem('komiknesia-theme', theme);
       document.documentElement.classList.add('dark');
     } else {
-      // Remove from localStorage when switching to light mode
-      localStorage.removeItem('komiknesia-theme');
       document.documentElement.classList.remove('dark');
     }
   }, [theme]);

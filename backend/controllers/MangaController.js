@@ -232,6 +232,7 @@ const store = async (req, res) => {
       color,
       source,
       slug: slugOverride,
+      is_project,
     } = req.body;
 
     const slugSource =
@@ -279,8 +280,8 @@ const store = async (req, res) => {
       `
       INSERT INTO manga (
         title, slug, author, synopsis, category_id, thumbnail, cover_background,
-        alternative_name, content_type, country_id, \`release\`, status, rating, color, source, is_input_manual
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        alternative_name, content_type, country_id, \`release\`, status, rating, color, source, is_input_manual, is_project
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       [
         title,
@@ -299,6 +300,7 @@ const store = async (req, res) => {
         color === 'true' || color === true ? true : false,
         source || null,
         true,
+        is_project === 'true' || is_project === true ? true : false,
       ]
     );
 
@@ -338,6 +340,7 @@ const update = async (req, res) => {
       rating,
       color,
       source,
+      is_project,
     } = req.body;
 
     const slug = generateSlug(title);
@@ -352,7 +355,7 @@ const update = async (req, res) => {
 
     let query = `UPDATE manga SET 
       title = ?, slug = ?, author = ?, synopsis = ?, category_id = ?,
-      alternative_name = ?, content_type = ?, country_id = ?, \`release\` = ?, status = ?, rating = ?, color = ?, source = ?`;
+      alternative_name = ?, content_type = ?, country_id = ?, \`release\` = ?, status = ?, rating = ?, color = ?, source = ?, is_project = ?`;
     const params = [
       title,
       slug,
@@ -367,6 +370,7 @@ const update = async (req, res) => {
       rating ? parseFloat(rating) : null,
       color === 'true' || color === true ? true : false,
       source || null,
+      is_project === 'true' || is_project === true ? true : false,
     ];
 
     if (req.files?.thumbnail && req.files.thumbnail[0]) {
@@ -508,9 +512,8 @@ const search = async (req, res) => {
     }
 
     localResults.sort((a, b) => {
-      const aTime = a.lastChapters?.[0]?.created_at?.time || 0;
-      const bTime = b.lastChapters?.[0]?.created_at?.time || 0;
-      return bTime - aTime;
+      const pick = (item) => item.lastChapters?.[0]?.created_at?.time || 0;
+      return pick(b) - pick(a);
     });
 
     const offset = (pageNum - 1) * perPage;
