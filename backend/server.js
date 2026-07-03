@@ -391,6 +391,8 @@ const runSqlMigration = async () => {
      VALUES
        ('popup_ads_interval_minutes', '20'),
        ('home_popup_interval_minutes', '30'),
+       ('popup_ads_initial_delay_minutes', '5'),
+       ('popup_ads_unlock_seconds', '10'),
        ('redirect_script_urls', '["https://mbuh.my.id/siap/1770790072377-komiknesia.js"]')
      ON DUPLICATE KEY UPDATE \`value\` = \`value\``,
   ];

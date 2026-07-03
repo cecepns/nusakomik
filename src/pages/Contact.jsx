@@ -220,7 +220,7 @@ const Contact = () => {
                 )}
                 {hasWhatsapp && (
                   <a
-                    href={`https://wa.me/${contactInfo.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent("Halo, saya ingin bertanya tentang KomikNesia")}`}
+                    href={`https://wa.me/${contactInfo.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent("Halo, saya ingin bertanya tentang Nusakomik")}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={headerNavLinkClass}

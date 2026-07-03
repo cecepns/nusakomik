@@ -21,6 +21,9 @@ import {
   ExternalLink,
   Heart,
   ListChecks,
+  Download,
+  Loader2,
+  Lock,
 } from 'lucide-react';
 import LazyImage from '../components/LazyImage';
 import BottomNavigation from '../components/BottomNavigation';
@@ -41,6 +44,13 @@ import {
 } from 'react-share';
 import { toast } from 'react-toastify';
 import discordIcon from '../assets/discord.svg';
+import { downloadChapterZip } from '../utils/downloadChapterZip';
+import LoginPopup from '../components/LoginPopup';
+import {
+  findLatestChapter,
+  requiresLoginForChapter,
+  CHAPTER_LOGIN_LOCK_MESSAGE,
+} from '../utils/latestChapter';
 
 import { REACTION_OPTIONS, sumReactionCounts } from '../constants/reactions';
 
@@ -63,6 +73,9 @@ const MangaDetail = () => {
   const [sortOrder, setSortOrder] = useState('desc'); // 'asc' (from chapter 1) or 'desc' (from last chapter)
   const [currentPage, setCurrentPage] = useState(1);
   const [sharePopupOpen, setSharePopupOpen] = useState(false);
+  const [downloadingChapterSlug, setDownloadingChapterSlug] = useState(null);
+  const [loginPopupOpen, setLoginPopupOpen] = useState(false);
+  const [pendingChapterSlug, setPendingChapterSlug] = useState(null);
   const itemsPerPage = 10;
   
   // Vote states
@@ -262,6 +275,7 @@ const MangaDetail = () => {
           title: ch.title || `Chapter ${ch.number}`,
           thumbnail: mangaData.cover,
           uploadedAt: uploadedAt,
+          created_at: ch.created_at,
           isNew: index === 0,
           slug: ch.slug,
           views: Number(ch.views) || 0,
@@ -387,6 +401,48 @@ const MangaDetail = () => {
       console.error('Error submitting vote:', err);
     } finally {
       setVoteLoading(false);
+    }
+  };
+
+  const tryOpenChapter = (chapter) => {
+    if (requiresLoginForChapter(chapter, chapters, isAuthenticated)) {
+      setPendingChapterSlug(chapter.slug);
+      setLoginPopupOpen(true);
+      return;
+    }
+    navigate(`/view/${chapter.slug}`);
+  };
+
+  const handleBacaClick = () => {
+    const target = findLatestChapter(chapters) || chapters[0];
+    if (!target) return;
+    tryOpenChapter(target);
+  };
+
+  const handleLoginPopupSuccess = () => {
+    if (pendingChapterSlug) {
+      navigate(`/view/${pendingChapterSlug}`);
+      setPendingChapterSlug(null);
+    }
+  };
+
+  const handleDownloadChapter = async (chapter, event) => {
+    event?.stopPropagation?.();
+    if (!chapter?.slug || downloadingChapterSlug) return;
+
+    setDownloadingChapterSlug(chapter.slug);
+    try {
+      await downloadChapterZip({
+        slug: chapter.slug,
+        mangaTitle: manga?.title,
+        chapterNumber: chapter.number,
+      });
+      toast.success(`Chapter ${chapter.number} berhasil diunduh (ZIP).`);
+    } catch (err) {
+      console.error('Download chapter error:', err);
+      toast.error(err?.message || 'Gagal mengunduh chapter.');
+    } finally {
+      setDownloadingChapterSlug(null);
     }
   };
 
@@ -631,9 +687,7 @@ const MangaDetail = () => {
                 <div className="order-1 mt-6 flex w-full flex-col space-y-3 md:order-2 md:mt-0 md:flex-row md:flex-wrap md:gap-3 md:space-y-0">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (chapters.length > 0) navigate(`/view/${chapters[0].slug}`);
-                    }}
+                    onClick={handleBacaClick}
                     disabled={chapters.length === 0}
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3.5 text-base font-semibold text-white shadow-lg transition hover:bg-violet-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 md:w-auto md:px-6 md:py-3"
                   >
@@ -932,11 +986,15 @@ const MangaDetail = () => {
 
               {/* List View */}
               <div className="space-y-3">
-                {paginatedChapters.map((chapter) => (
+                {paginatedChapters.map((chapter) => {
+                  const isLocked = requiresLoginForChapter(chapter, chapters, isAuthenticated);
+                  return (
                   <div
                     key={chapter.id}
-                    className="bg-primary-900 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer flex items-center justify-between gap-3 p-3 sm:gap-4 sm:p-4"
-                    onClick={() => navigate(`/view/${chapter.slug}`)}
+                    className={`bg-primary-900 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer flex items-center justify-between gap-3 p-3 sm:gap-4 sm:p-4 ${
+                      isLocked ? 'ring-1 ring-amber-500/40' : ''
+                    }`}
+                    onClick={() => tryOpenChapter(chapter)}
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
                       <div className="relative aspect-[3/4] w-12 shrink-0 overflow-hidden rounded-md bg-primary-800 ring-1 ring-primary-700/80 sm:w-16">
@@ -967,17 +1025,45 @@ const MangaDetail = () => {
                       </div>
                     </div>
 
-                    {/* Badges and Icon */}
+                    {/* Badges and actions */}
                     <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                       {chapter.isNew && (
                         <div className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">
                           UP
                         </div>
                       )}
-                      <Play className="h-6 w-6 text-gray-400 group-hover:text-purple-400 transition-colors duration-300" />
+                      {isLocked && (
+                        <div
+                          className="flex items-center gap-1 rounded bg-amber-500/15 px-2 py-1 text-xs font-semibold text-amber-400"
+                          title="Login untuk membaca chapter terbaru"
+                        >
+                          <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          <span className="hidden sm:inline">Login</span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => handleDownloadChapter(chapter, e)}
+                        disabled={downloadingChapterSlug === chapter.slug}
+                        className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-primary-800 hover:text-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
+                        title="Unduh gambar chapter (ZIP)"
+                        aria-label={`Unduh chapter ${chapter.number} sebagai ZIP`}
+                      >
+                        {downloadingChapterSlug === chapter.slug ? (
+                          <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+                        ) : (
+                          <Download className="h-5 w-5" aria-hidden />
+                        )}
+                      </button>
+                      {isLocked ? (
+                        <Lock className="h-6 w-6 text-amber-400/90" aria-hidden />
+                      ) : (
+                        <Play className="h-6 w-6 text-gray-400 group-hover:text-purple-400 transition-colors duration-300" />
+                      )}
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
 
               {filteredChapters.length === 0 && (
@@ -1390,6 +1476,16 @@ const MangaDetail = () => {
 
       <FloatingFixedAd position="top" ads={floatingTopAds} />
       <FloatingFixedAd position="bottom" ads={floatingBottomAds} />
+
+      <LoginPopup
+        open={loginPopupOpen}
+        onClose={() => {
+          setLoginPopupOpen(false);
+          setPendingChapterSlug(null);
+        }}
+        onSuccess={handleLoginPopupSuccess}
+        message={CHAPTER_LOGIN_LOCK_MESSAGE}
+      />
       {/* <LiveChatWidget /> */}
     </div>
   );

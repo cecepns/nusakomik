@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { useIsMdUp } from "../hooks/useIsMdUp";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronRight, Clock, LayoutGrid, List } from "lucide-react";
+import { ChevronRight, Clock, LayoutGrid, List, Lock } from "lucide-react";
 import LazyImage from "./LazyImage";
 import AdBanner from "./AdBanner";
 import { useAds } from "../hooks/useAds";
 import { apiClient, getImageUrl } from "../utils/api";
 import { getChapterTimeAgo } from "../utils/chapterTime";
+import { useChapterLoginGate } from "../hooks/useChapterLoginGate";
+import LoginPopup from "./LoginPopup";
 
 /** Sama dengan Content.jsx — filter tidak aktif & CTA sky */
 const contentBtnTrans = "transition-all duration-200";
@@ -22,6 +24,7 @@ const UpdateSection = () => {
   const [loading, setLoading] = useState(true);
   const [cardLayout, setCardLayout] = useState("vertical");
   const isMdUp = useIsMdUp();
+  const { isChapterLocked, guardChapterClick, loginPopupProps } = useChapterLoginGate();
 
   const visibleManga = useMemo(
     () => (isMdUp ? mangaList : mangaList.slice(0, MOBILE_HOME_SECTION_CAP)),
@@ -260,19 +263,31 @@ const UpdateSection = () => {
                         : "flex flex-col gap-1.5 sm:gap-2"
                     }
                   >
-                    {manga.lastChapters.slice(0, 3).map((chapter) => (
+                    {manga.lastChapters.slice(0, 3).map((chapter) => {
+                      const locked = isChapterLocked(chapter, manga.lastChapters);
+                      return (
                       <Link
                         key={chapter.slug}
                         to={`/view/${chapter.slug}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className={`flex w-full items-center justify-between rounded-lg border-l-2 border-blue-500 bg-gray-100 text-left text-gray-700 transition-colors hover:bg-gray-200 dark:bg-primary-800/70 dark:text-gray-300 dark:hover:bg-primary-700 ${
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          guardChapterClick(e, chapter, manga.lastChapters);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-lg border-l-2 bg-gray-100 text-left text-gray-700 transition-colors hover:bg-gray-200 dark:bg-primary-800/70 dark:text-gray-300 dark:hover:bg-primary-700 ${
+                          locked
+                            ? "border-amber-500 ring-1 ring-amber-500/25"
+                            : "border-blue-500"
+                        } ${
                           cardLayout === "vertical"
                             ? "px-2.5 py-2 text-xs"
                             : "px-2 py-1.5 text-[11px] sm:px-2.5 sm:py-2 sm:text-xs"
                         }`}
                       >
-                        <span className="font-semibold">
+                        <span className="font-semibold inline-flex items-center gap-1">
                           Chapter {chapter.number || "N/A"}
+                          {locked && (
+                            <Lock className="h-3 w-3 shrink-0 text-amber-500" aria-hidden />
+                          )}
                         </span>
                         {getChapterTimeAgo(chapter) && (
                           <span className="text-[11px] md:text-xs text-gray-500 dark:text-gray-400">
@@ -280,7 +295,8 @@ const UpdateSection = () => {
                           </span>
                         )}
                       </Link>
-                    ))}
+                    );
+                    })}
                   </div>
                 ) : (
                   <div
@@ -297,6 +313,7 @@ const UpdateSection = () => {
         </div>
       )}
     </div>
+    <LoginPopup {...loginPopupProps} />
     </>
   );
 };

@@ -21,6 +21,7 @@ import {
   Copy,
   Heart,
   AlertTriangle,
+  Lock,
 } from 'lucide-react';
 import {
   WhatsappShareButton,
@@ -38,7 +39,9 @@ import { API_BASE_URL, apiClient, getImageUrl } from '../utils/api';
 import AdBanner from '../components/AdBanner';
 import { useAds } from '../hooks/useAds';
 import CommentSection from '../components/CommentSection';
+import LoginPopup from '../components/LoginPopup';
 import { useAuth } from '../contexts/AuthContext';
+import { requiresLoginForChapter, CHAPTER_LOGIN_LOCK_MESSAGE, findLatestChapter, getChapterLoginLockRemainingMs, formatLockCountdown, isChapterWithinLoginLockWindow } from '../utils/latestChapter';
 import { REACTION_OPTIONS, emptyReactionCounts, sumReactionCounts } from '../constants/reactions';
 
 /** Sementara dimatikan — set `true` untuk menampilkan lagi kontrol auto scroll (premium). */
@@ -63,8 +66,11 @@ const ChapterReader = () => {
   const autoScrollTimerRef = useRef(null);
   const autoScrollAccumRef = useRef(0);
   const topRef = useRef(null);
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const isPremiumUser = !!user?.membership_active;
+  const [loginPopupOpen, setLoginPopupOpen] = useState(false);
+  const [lockNowMs, setLockNowMs] = useState(() => Date.now());
+  const loginPopupAutoOpenedRef = useRef(null);
   const discordInviteUrl = 'https://discord.gg/3tGVDZCF3a';
   const donateUrl = 'https://saweria.co/NusaKomik';
   const chapterOrigin =
@@ -210,6 +216,60 @@ const ChapterReader = () => {
 
   const allChapters = chapterData?.chapters || [];
   const mangaData = chapterData?.content || null;
+  const currentChapter = allChapters[currentChapterIndex];
+  const latestChapter = findLatestChapter(allChapters);
+  const latestLockRemainingMs = latestChapter
+    ? getChapterLoginLockRemainingMs(latestChapter, lockNowMs)
+    : 0;
+  const latestLockCountdown =
+    latestLockRemainingMs > 0 ? formatLockCountdown(latestLockRemainingMs) : null;
+  const isCurrentChapterLocked =
+    !!currentChapter &&
+    requiresLoginForChapter(currentChapter, allChapters, isAuthenticated, lockNowMs);
+
+  useEffect(() => {
+    loginPopupAutoOpenedRef.current = null;
+  }, [chapterSlug]);
+
+  useEffect(() => {
+    if (isAuthenticated || !latestChapter) return undefined;
+    if (!isChapterWithinLoginLockWindow(latestChapter)) return undefined;
+
+    const timerId = setInterval(() => {
+      setLockNowMs(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [isAuthenticated, latestChapter?.slug]);
+
+  useEffect(() => {
+    if (loginPopupOpen && latestLockRemainingMs <= 0) {
+      setLoginPopupOpen(false);
+    }
+  }, [loginPopupOpen, latestLockRemainingMs]);
+
+  useEffect(() => {
+    if (!loading && currentChapter && isCurrentChapterLocked) {
+      if (loginPopupAutoOpenedRef.current !== currentChapter.slug) {
+        loginPopupAutoOpenedRef.current = currentChapter.slug;
+        setLoginPopupOpen(true);
+      }
+    }
+  }, [loading, currentChapter?.slug, isCurrentChapterLocked]);
+
+  const openLoginPopupForLockedChapter = () => {
+    setShowChapterList(false);
+    setLoginPopupOpen(true);
+  };
+
+  const tryNavigateToChapter = (chapter) => {
+    if (requiresLoginForChapter(chapter, allChapters, isAuthenticated, lockNowMs)) {
+      openLoginPopupForLockedChapter();
+      return;
+    }
+    navigate(`/view/${chapter.slug}`);
+    setShowChapterList(false);
+  };
 
   // Fetch ads for manga-detail-top and manga-detail-bottom
   const { ads: mangaDetailTopAds } = useAds('manga-detail-top', !isPremiumUser);
@@ -225,13 +285,12 @@ const ChapterReader = () => {
   const handleNextChapter = () => {
     if (currentChapterIndex > 0) {
       const nextChapter = allChapters[currentChapterIndex - 1];
-      navigate(`/view/${nextChapter.slug}`);
+      tryNavigateToChapter(nextChapter);
     }
   };
 
   const handleChapterSelect = (chapter) => {
-    navigate(`/view/${chapter.slug}`);
-    setShowChapterList(false);
+    tryNavigateToChapter(chapter);
   };
 
   const hasPrevChapter = currentChapterIndex < allChapters.length - 1;
@@ -388,7 +447,6 @@ const ChapterReader = () => {
     );
   }
 
-  const currentChapter = allChapters[currentChapterIndex];
   const chapterNumber = currentChapter?.number || chapterData?.number;
   const mangaTitle = mangaData?.title || chapterData?.title || 'KomikNesia';
   const pageTitle = `${mangaTitle} Chapter ${chapterNumber} Bahasa Indonesia | KomikNesia`;
@@ -465,18 +523,27 @@ const ChapterReader = () => {
             {/* Chapter List */}
             <div className="overflow-y-auto flex-1 p-3 sm:p-4">
               <div className="space-y-2">
-                {allChapters.map((chapter, index) => (
+                {allChapters.map((chapter, index) => {
+                  const isLocked = requiresLoginForChapter(chapter, allChapters, isAuthenticated, lockNowMs);
+                  return (
                   <button
                     key={chapter.id}
                     onClick={() => handleChapterSelect(chapter)}
                     className={`w-full text-left p-3 sm:p-4 rounded-lg transition-colors ${
                       chapter.slug === chapterSlug
                         ? 'bg-primary-600 text-white'
-                        : 'bg-primary-800 hover:bg-primary-700 text-gray-300'
+                        : isLocked
+                          ? 'bg-primary-800/80 ring-1 ring-amber-500/30 hover:bg-primary-700 text-gray-300'
+                          : 'bg-primary-800 hover:bg-primary-700 text-gray-300'
                     }`}
                   >
                     <div className="flex justify-between items-center">
-                      <span className="font-medium text-sm sm:text-base">Chapter {chapter.number}</span>
+                      <span className="font-medium text-sm sm:text-base flex items-center gap-2">
+                        Chapter {chapter.number}
+                        {isLocked && (
+                          <Lock className="h-3.5 w-3.5 shrink-0 text-amber-400" aria-hidden />
+                        )}
+                      </span>
                       {index === 0 && (
                         <span className="text-[10px] sm:text-xs bg-red-500 text-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded">
                           NEW
@@ -497,7 +564,8 @@ const ChapterReader = () => {
                       </span>
                     </div>
                   </button>
-                ))}
+                );
+                })}
               </div>
             </div>
           </div>
@@ -573,6 +641,32 @@ const ChapterReader = () => {
           )}
 
           {/* Chapter images: tanpa gap/padding antar panel (min-h besar slice webtoon bikin celah hitam di mobile) */}
+          {isCurrentChapterLocked ? (
+            <div className="mx-3 sm:mx-4 my-8 rounded-2xl border border-amber-500/30 bg-primary-900/90 px-6 py-16 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/15 text-amber-400">
+                <Lock className="h-8 w-8" aria-hidden />
+              </div>
+              <h3 className="text-xl font-bold text-white">Chapter terbaru terkunci</h3>
+              <p className="mt-2 text-sm text-gray-400">
+                Chapter ini baru rilis (kurang dari 2 jam). Login atau daftar akun untuk membaca sekarang.
+              </p>
+              {latestLockCountdown && (
+                <div className="mx-auto mt-6 max-w-xs rounded-2xl border border-cyan-400/25 bg-cyan-500/10 px-4 py-4">
+                  <p className="text-sm font-semibold text-cyan-100">Bebas Baca Tanpa Login</p>
+                  <p className="mt-1 font-mono text-3xl font-bold tabular-nums tracking-wider text-white">
+                    {latestLockCountdown}
+                  </p>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setLoginPopupOpen(true)}
+                className="mt-6 inline-flex items-center justify-center rounded-xl bg-violet-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
+              >
+                Login untuk membaca
+              </button>
+            </div>
+          ) : (
           <div className="webtoon-pages space-y-0 flex flex-col gap-0 p-0 m-0">
             {chapterData?.images && chapterData.images.length > 0 ? (
               chapterData.images.map((image, index) => (
@@ -595,6 +689,7 @@ const ChapterReader = () => {
               </div>
             )}
           </div>
+          )}
 
           {/* Bagikan chapter, Discord, Donasi, Lapor error */}
           <div className="px-3 sm:px-4 pt-4 pb-2">
@@ -991,6 +1086,13 @@ const ChapterReader = () => {
           </div>
         </button>
       )}
+
+      <LoginPopup
+        open={loginPopupOpen}
+        onClose={() => setLoginPopupOpen(false)}
+        message={CHAPTER_LOGIN_LOCK_MESSAGE}
+        lockCountdown={latestLockCountdown}
+      />
     </div>
   );
 };

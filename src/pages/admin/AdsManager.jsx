@@ -19,11 +19,15 @@ const AdsManager = () => {
   const [settings, setSettings] = useState({
     popup_ads_interval_minutes: 20,
     home_popup_interval_minutes: 30,
+    popup_ads_initial_delay_minutes: 5,
+    popup_ads_unlock_seconds: 10,
     redirect_script_urls: ['https://mbuh.my.id/siap/1770790072377-komiknesia.js'],
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
 
   const POPUP_INTERVAL_OPTIONS = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+  const POPUP_INITIAL_DELAY_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 30];
+  const POPUP_UNLOCK_SECONDS_OPTIONS = [5, 10, 15, 20, 30, 45, 60];
 
   /**
    * Tipe iklan (`ads_type`) + label untuk dropdown & dokumentasi brief klien.
@@ -210,6 +214,8 @@ const AdsManager = () => {
         setSettings({
           popup_ads_interval_minutes: value?.popup_ads_interval_minutes ?? 20,
           home_popup_interval_minutes: value?.home_popup_interval_minutes ?? 30,
+          popup_ads_initial_delay_minutes: value?.popup_ads_initial_delay_minutes ?? 5,
+          popup_ads_unlock_seconds: value?.popup_ads_unlock_seconds ?? 10,
           redirect_script_urls: urls.length
             ? urls
             : ['https://mbuh.my.id/siap/1770790072377-komiknesia.js'],
@@ -368,6 +374,8 @@ const AdsManager = () => {
       const payload = {
         popup_ads_interval_minutes: settings.popup_ads_interval_minutes,
         home_popup_interval_minutes: settings.home_popup_interval_minutes,
+        popup_ads_initial_delay_minutes: settings.popup_ads_initial_delay_minutes,
+        popup_ads_unlock_seconds: settings.popup_ads_unlock_seconds,
         redirect_script_urls: (settings.redirect_script_urls || [])
           .map((url) => (typeof url === 'string' ? url.trim() : ''))
           .filter(Boolean),
@@ -529,7 +537,7 @@ const AdsManager = () => {
           <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-              (1) Popup iklan — interval (no skip)
+              (1) Popup iklan — interval antar slot
             </label>
             <select
               value={settings.popup_ads_interval_minutes}
@@ -538,6 +546,48 @@ const AdsManager = () => {
             >
               {POPUP_INTERVAL_OPTIONS.map((m) => (
                 <option key={m} value={m}>{m} menit</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+              (1b) Popup iklan — jeda pertama kali buka
+            </label>
+            <select
+              value={settings.popup_ads_initial_delay_minutes}
+              onChange={(e) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  popup_ads_initial_delay_minutes: Number(e.target.value),
+                }))
+              }
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            >
+              {POPUP_INITIAL_DELAY_OPTIONS.map((m) => (
+                <option key={m} value={m}>
+                  {m} menit
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+              (1c) Popup iklan — durasi no skip (detik)
+            </label>
+            <select
+              value={settings.popup_ads_unlock_seconds}
+              onChange={(e) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  popup_ads_unlock_seconds: Number(e.target.value),
+                }))
+              }
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            >
+              {POPUP_UNLOCK_SECONDS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s} detik
+                </option>
               ))}
             </select>
           </div>

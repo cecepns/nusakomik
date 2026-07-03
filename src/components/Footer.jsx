@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Logo from '../assets/logo.png';
 
 function loadHistatsEmbed() {
   if (typeof window === 'undefined') return;
@@ -36,7 +35,7 @@ const Footer = () => {
         <div className="flex flex-col items-center space-y-6">
           <div className="flex items-center">
             <img
-              src={Logo}
+              src="/logo.png"
               alt="KomikNesia"
               className="w-36 md:w-44 h-auto cursor-pointer"
               onClick={() => navigate('/')}

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Moon, Sun, Search, X, User, Menu } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
-import Logo from "../assets/logo.png";
 import LazyImage from "./LazyImage";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -123,7 +122,7 @@ const Header = () => {
           {/* Logo */}
           <div className="flex items-center flex-shrink-0">
             <img
-              src={Logo}
+              src="/logo.png"
               alt="Komiknesia"
               className="w-32 md:w-44 h-auto cursor-pointer"
               onClick={() => handleNavigate("/")}
