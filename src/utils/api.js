@@ -926,3 +926,46 @@ class APIClient {
 }
 
 export const apiClient = new APIClient();
+
+export const fetchComicDetail = async (slug) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/comic/${slug}`);
+    if (response.ok) {
+      const result = await response.json();
+      if (result.status && result.data && result.data.is_project) {
+        return result;
+      }
+    }
+  } catch (err) {
+    console.warn("Failed local fetch for comic:", slug, err);
+  }
+
+  // Fallback to komiknesia API
+  const response = await fetch(`https://api-be.komiknesia.my.id/api/comic/${slug}`);
+  if (!response.ok) {
+    throw new Error('Manga tidak ditemukan');
+  }
+  return response.json();
+};
+
+export const fetchChapterDetail = async (chapterSlug, token) => {
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  try {
+    const response = await fetch(`${API_BASE_URL}/chapters/slug/${chapterSlug}`, { headers });
+    if (response.ok) {
+      const result = await response.json();
+      if (result.status && result.data && result.data.content && result.data.content.is_project) {
+        return result;
+      }
+    }
+  } catch (err) {
+    console.warn("Failed local fetch for chapter:", chapterSlug, err);
+  }
+
+  // Fallback to komiknesia API
+  const response = await fetch(`https://api-be.komiknesia.my.id/api/chapters/slug/${chapterSlug}`, { headers });
+  if (!response.ok) {
+    throw new Error('Chapter tidak ditemukan');
+  }
+  return response.json();
+};

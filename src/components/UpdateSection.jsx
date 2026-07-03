@@ -38,12 +38,10 @@ const UpdateSection = () => {
   const fetchUpdateManga = async () => {
     try {
       setLoading(true);
-      // Use /api/contents endpoint with page=1, orderBy=Update, per_page=14
-      const response = await apiClient.getContents({
-        page: 1,
-        per_page: 15,
-        orderBy: "Update",
-      });
+      const res = await fetch(
+        "https://api-be.komiknesia.my.id/api/contents?page=1&per_page=15&orderBy=Update"
+      );
+      const response = await res.json();
 
       // Extract manga data from response
       const mangaData = response.data || [];

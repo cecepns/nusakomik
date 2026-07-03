@@ -35,7 +35,7 @@ import { toast } from 'react-toastify';
 import discordIcon from '../assets/discord.svg';
 import LazyImage from '../components/LazyImage';
 import { saveToHistory } from '../utils/historyManager';
-import { API_BASE_URL, apiClient, getImageUrl } from '../utils/api';
+import { API_BASE_URL, apiClient, getImageUrl, fetchChapterDetail } from '../utils/api';
 import AdBanner from '../components/AdBanner';
 import { useAds } from '../hooks/useAds';
 import CommentSection from '../components/CommentSection';
@@ -142,17 +142,8 @@ const ChapterReader = () => {
         setLoading(true);
         setError(null);
         
-        // Use our API endpoint which checks database first, then falls back to WestManga
         const token = apiClient.getAuthToken();
-        const response = await fetch(`${API_BASE_URL}/chapters/slug/${chapterSlug}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        
-        if (!response.ok) {
-          throw new Error('Chapter tidak ditemukan');
-        }
-        
-        const result = await response.json();
+        const result = await fetchChapterDetail(chapterSlug, token);
         
         if (result.status && result.data) {
           setChapterData(result.data);

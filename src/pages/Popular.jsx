@@ -7,12 +7,12 @@ import { useAds } from "../hooks/useAds";
 import { apiClient, getImageUrl } from "../utils/api";
 
 const TABS = [
-  { id: "manhwa", label: "Manhwa", subtitle: "100 komik populer (Korea)" },
-  { id: "manga", label: "Manga", subtitle: "100 komik populer (Jepang)" },
-  { id: "manhua", label: "Manhua", subtitle: "100 komik populer (China)" },
+  { id: "manhwa", label: "Manhwa", subtitle: "50 komik populer (Korea)" },
+  { id: "manga", label: "Manga", subtitle: "50 komik populer (Jepang)" },
+  { id: "manhua", label: "Manhua", subtitle: "50 komik populer (China)" },
 ];
 
-const PER_PAGE = 100;
+const PER_PAGE = 50;
 
 const tabBtnTrans = "transition-all duration-200";
 const tabActiveClass = `rounded-xl border border-sky-500/25 bg-sky-600 font-semibold text-white shadow-[0_4px_0_0_#0369a1] ${tabBtnTrans} dark:border-cyan-200/20 dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_4px_0_0_#42a5f5]`;
@@ -34,14 +34,12 @@ const Popular = () => {
       setError(null);
       try {
         const [manhwaRes, mangaRes, manhuaRes] = await Promise.all(
-          TABS.map((tab) =>
-            apiClient.getContents({
-              type: tab.id,
-              orderBy: "Popular",
-              per_page: PER_PAGE,
-              page: 1,
-            })
-          )
+          TABS.map(async (tab) => {
+            const res = await fetch(
+              `https://api-be.komiknesia.my.id/api/contents?page=1&per_page=${PER_PAGE}&type=${tab.id}&orderBy=Popular`
+            );
+            return res.json();
+          })
         );
         if (cancelled) return;
         setLists({
@@ -73,7 +71,7 @@ const Popular = () => {
         <title>Populer | KomikNesia</title>
         <meta
           name="description"
-          content="Daftar komik populer: Manhwa, Manga, dan Manhua — masing-masing 100 judul teratas di KomikNesia."
+          content="Daftar komik populer: Manhwa, Manga, dan Manhua — masing-masing 50 judul teratas di KomikNesia."
         />
       </Helmet>
 
@@ -83,7 +81,7 @@ const Popular = () => {
             Halaman populer
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 md:text-base">
-            Pilih kategori: Manhwa, Manga, atau Manhua — masing-masing 100 judul populer.
+            Pilih kategori: Manhwa, Manga, atau Manhua — masing-masing 50 judul populer.
           </p>
         </header>
 

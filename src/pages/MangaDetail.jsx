@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import LazyImage from '../components/LazyImage';
 import BottomNavigation from '../components/BottomNavigation';
-import { API_BASE_URL, apiClient, getImageUrl } from '../utils/api';
+import { API_BASE_URL, apiClient, getImageUrl, fetchComicDetail } from '../utils/api';
 import AdBanner from '../components/AdBanner';
 import FloatingFixedAd from '../components/FloatingFixedAd';
 import { useAds } from '../hooks/useAds';
@@ -104,13 +104,7 @@ const MangaDetail = () => {
         setLoading(true);
         setError(null);
         
-        const response = await fetch(`${API_BASE_URL}/comic/${slug}`);
-        
-        if (!response.ok) {
-          throw new Error('Manga tidak ditemukan');
-        }
-        
-        const result = await response.json();
+        const result = await fetchComicDetail(slug);
         
         if (result.status && result.data) {
           setManga(result.data);

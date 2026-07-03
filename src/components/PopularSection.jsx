@@ -32,16 +32,19 @@ const PopularSection = () => {
   const fetchPopularManga = useCallback(async () => {
     try {
       setLoading(true);
-      const payload = {
-        page: 1,
-        per_page: 15,
+      const params = new URLSearchParams({
+        page: "1",
+        per_page: "15",
         orderBy: "Popular",
-      };
-      if (popularRange === "day") payload.popularWindow = "day";
-      else if (popularRange === "week") payload.popularWindow = "week";
-      else if (popularRange === "month") payload.popularWindow = "month";
+      });
+      if (popularRange === "day") params.append("popularWindow", "day");
+      else if (popularRange === "week") params.append("popularWindow", "week");
+      else if (popularRange === "month") params.append("popularWindow", "month");
 
-      const response = await apiClient.getContents(payload);
+      const res = await fetch(
+        `https://api-be.komiknesia.my.id/api/contents?${params.toString()}`
+      );
+      const response = await res.json();
       setFilteredManga(response.data || []);
     } catch (error) {
       console.error("Error fetching popular manga:", error);

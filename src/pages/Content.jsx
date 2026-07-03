@@ -75,7 +75,11 @@ const Content = () => {
     const fetchGenres = async () => {
       setGenresLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/contents/genres`);
+        const isProjectFilterActive = selectedProject !== "all";
+        const url = isProjectFilterActive
+          ? `${API_BASE_URL}/contents/genres`
+          : "https://api-be.komiknesia.my.id/api/contents/genres";
+        const response = await fetch(url);
         const data = await response.json();
         if (data.status && data.data) {
           setGenres(data.data);
@@ -87,7 +91,7 @@ const Content = () => {
       }
     };
     fetchGenres();
-  }, []);
+  }, [selectedProject]);
 
   const selectedGenres = useMemo(() => {
     const genreIdParams = searchParams
@@ -221,8 +225,13 @@ const Content = () => {
         params.append("orderBy", selectedOrder);
       }
 
+      const isProjectFilterActive = selectedProject !== "all";
+      const baseUrl = isProjectFilterActive
+        ? `${API_BASE_URL}/contents`
+        : "https://api-be.komiknesia.my.id/api/contents";
+
       const response = await fetch(
-        `${API_BASE_URL}/contents?${params.toString()}`,
+        `${baseUrl}?${params.toString()}`,
       );
       const data = await response.json();
 
