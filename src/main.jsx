@@ -11,6 +11,7 @@ const isLocalhost =
   hostname === 'localhost' || hostname === '127.0.0.1';
 
 const allowedHosts = [
+  'nusakomik-two.vercel.app',
   '02.komiknesia.asia',
   '03.komiknesia.asia',
   'id.komiknesia.net',
