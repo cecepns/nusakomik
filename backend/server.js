@@ -1,4 +1,5 @@
 /* global require, __dirname */
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const multer = require('multer');
@@ -26,6 +27,8 @@ const featuredItemsRoutes = require('./routes/featuredItemsRoutes');
 const sitemapRoutes = require('./routes/sitemapRoutes');
 const ikiruRoutes = require('./routes/ikiruRoutes');
 const ikiruSyncRoutes = require('./routes/ikiruSyncRoutes');
+const apkomikSyncRoutes = require('./routes/apkomikSyncRoutes');
+const apkomikRoutes = require('./routes/apkomikRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const contactInfoRoutes = require('./routes/contactInfoRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
@@ -34,8 +37,15 @@ const leaderboardRoutes = require('./routes/leaderboardRoutes');
 const premiumOrderRoutes = require('./routes/premiumOrderRoutes');
 const stickerRoutes = require('./routes/stickerRoutes');
 const liveChatRoutes = require('./routes/liveChatRoutes');
+const imageProxyRoutes = require('./routes/imageProxyRoutes');
+const migrationRoutes = require('./routes/migrationRoutes');
+const scrapperSyncRoutes = require('./routes/scrapperSyncRoutes');
+const { toProxiedImagePathIfNeeded } = require('./utils/ikiruCdnImage');
+const { CHAPTER_RELEASED_WHERE, isScheduledReleaseInFuture } = require('./utils/chapterRelease');
+const { validateApiOrigin } = require('./middlewares/validateApiOrigin');
 
 const app = express();
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const PORT = 3001;
 
@@ -46,8 +56,18 @@ const allowedOrigins = [
   'https://komiknesia.vercel.app',
   'https://komiknesia.net',
   'https://www.komiknesia.asia',
-  'https://id.nusakomik.com',
-  'https://www.02.komiknesia.asia' // pastikan versi www juga ada
+  'https://02.komiknesia.asia',
+  'https://www.02.komiknesia.asia', // pastikan versi www juga ada
+  'https://id.komiknesia.net',
+  'https://v1.komiknesiaku.com',
+  'https://v2.komiknesia.site',
+  'https://v3.komiknesia.site',
+  'https://v4.komiknesia.site',
+  'https://v5.komiknesia.site',
+  'https://v6.komiknesia.site',
+  'https://v7.komiknesia.site',
+  'https://v8.komiknesia.site',
+  'https://v9.komiknesia.site'
 ];
 
 app.use(cors({
@@ -152,20 +172,71 @@ io.on('connection', (socket) => {
   });
 });
 
+// Middleware to dynamically rewrite S3/R2 image keys to use the current dynamic CDN domain
+const { tryParseS3KeyFromUrl, getDynamicCdnDomainSync } = require('./utils/s3Upload');
+
+function transformUrls(obj, cdnUrl) {
+  if (obj === null || obj === undefined) return obj;
+
+  if (obj instanceof Date) {
+    return obj;
+  }
+
+  if (typeof obj === 'string') {
+    if (obj.startsWith('/uploads/')) {
+      return obj;
+    }
+    const key = tryParseS3KeyFromUrl(obj);
+    if (key) {
+      const cleanCdn = cdnUrl.replace(/\/$/, '');
+      return `${cleanCdn}/${key}`;
+    }
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => transformUrls(item, cdnUrl));
+  }
+
+  if (typeof obj === 'object') {
+    const newObj = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        newObj[key] = transformUrls(obj[key], cdnUrl);
+      }
+    }
+    return newObj;
+  }
+
+  return obj;
+}
+
+app.use((req, res, next) => {
+  const originalJson = res.json;
+  res.json = function (body) {
+    if (body) {
+      const cdnUrl = getDynamicCdnDomainSync();
+      body = transformUrls(body, cdnUrl);
+    }
+    return originalJson.call(this, body);
+  };
+  next();
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoriesRoutes);
-app.use('/api/contents', contentsRoutes);
+app.use('/api/contents', validateApiOrigin(), contentsRoutes);
 app.use('/api/bookmarks', bookmarkRoutes);
 app.use('/api/readlists', readlistRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/votes', voteRoutes);
 app.use('/api/chapter-reactions', chapterReactionRoutes);
-app.use('/api/manga', mangaRoutes);
-app.use('/api/chapters', chapterRoutes);
-app.use('/api/comic', comicRoutes);
+app.use('/api/manga', validateApiOrigin(), mangaRoutes);
+app.use('/api/chapters', validateApiOrigin(), chapterRoutes);
+app.use('/api/comic', validateApiOrigin(), comicRoutes);
 app.use('/api/ads', adsRoutes);
-app.use('/api/featured-items', featuredItemsRoutes);
+app.use('/api/featured-items', validateApiOrigin(), featuredItemsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/contact-info', contactInfoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
@@ -174,8 +245,13 @@ app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/premium-orders', premiumOrderRoutes);
 app.use('/api/stickers', stickerRoutes);
 app.use('/api/live-chat', liveChatRoutes);
+app.use('/api', imageProxyRoutes);
 app.use('/api/ikiru', ikiruRoutes);
+app.use('/api/apkomik', apkomikRoutes);
 app.use('/api/admin/ikiru-sync', ikiruSyncRoutes);
+app.use('/api/admin/apkomik-sync', apkomikSyncRoutes);
+app.use('/api/admin/migration', migrationRoutes);
+app.use('/api/admin/scrapper-sync', scrapperSyncRoutes);
 app.use('/', sitemapRoutes);
 
 
@@ -187,7 +263,7 @@ app.use('/', sitemapRoutes);
 app.get('/api/v/:chapterSlug', async (req, res) => {
   try {
     const { chapterSlug } = req.params;
-    
+
     // First, check if chapter exists in our database
     const [chapters] = await db.execute(`
       SELECT 
@@ -196,6 +272,7 @@ app.get('/api/v/:chapterSlug', async (req, res) => {
         c.title,
         c.slug,
         c.manga_id,
+        c.scheduled_release_at,
         m.is_input_manual,
         m.slug as manga_slug,
         m.title as manga_title,
@@ -217,10 +294,14 @@ app.get('/api/v/:chapterSlug', async (req, res) => {
       JOIN manga m ON c.manga_id = m.id
       WHERE c.slug = ?
     `, [chapterSlug]);
-    
+
     if (chapters.length > 0) {
       const chapter = chapters[0];
-      
+
+      if (isScheduledReleaseInFuture(chapter.scheduled_release_at)) {
+        return res.status(404).json({ status: false, error: 'Chapter belum dirilis' });
+      }
+
       // Hanya dukung manga input manual
       if (chapter.is_input_manual) {
         // Get all images for this chapter
@@ -230,7 +311,7 @@ app.get('/api/v/:chapterSlug', async (req, res) => {
           WHERE chapter_id = ?
           ORDER BY page_number
         `, [chapter.id]);
-        
+
         // Get all chapters for this manga (for navigation)
         const [allChapters] = await db.execute(`
           SELECT 
@@ -240,12 +321,14 @@ app.get('/api/v/:chapterSlug', async (req, res) => {
             c.title,
             c.slug,
             c.created_at,
+            UNIX_TIMESTAMP(COALESCE(c.scheduled_release_at, c.created_at)) as release_at_timestamp,
             UNIX_TIMESTAMP(c.created_at) as created_at_timestamp
           FROM chapters c
           WHERE c.manga_id = ?
+            AND ${CHAPTER_RELEASED_WHERE}
           ORDER BY CAST(c.chapter_number AS UNSIGNED) DESC, c.chapter_number DESC
         `, [chapter.manga_id]);
-        
+
         // Get genres for this manga
         const [genres] = await db.execute(`
           SELECT c.id, c.name, c.slug
@@ -253,17 +336,18 @@ app.get('/api/v/:chapterSlug', async (req, res) => {
           JOIN categories c ON mg.category_id = c.id
           WHERE mg.manga_id = ?
         `, [chapter.manga_id]);
-        
+
         // Format response to match WestManga API format
         const responseData = {
           images: images.map(img => {
             // Convert relative paths to full URLs if needed
             if (img.image_path && !img.image_path.startsWith('http')) {
-              return img.image_path.startsWith('/uploads/') 
+              const localUrl = img.image_path.startsWith('/uploads/')
                 ? `${req.protocol}://${req.get('host')}${img.image_path}`
                 : img.image_path;
+              return toProxiedImagePathIfNeeded(localUrl, req);
             }
-            return img.image_path;
+            return toProxiedImagePathIfNeeded(img.image_path, req);
           }),
           content: {
             id: chapter.manga_id,
@@ -272,7 +356,7 @@ app.get('/api/v/:chapterSlug', async (req, res) => {
             alternative_name: null,
             author: chapter.manga_author || 'Unknown',
             sinopsis: chapter.manga_sinopsis || null,
-            cover: chapter.manga_cover || null,
+            cover: toProxiedImagePathIfNeeded(chapter.manga_cover || null, req),
             content_type: chapter.content_type || 'comic',
             country_id: chapter.country_id || null,
             color: chapter.color ? true : false,
@@ -293,13 +377,13 @@ app.get('/api/v/:chapterSlug', async (req, res) => {
             title: ch.title || `Chapter ${ch.number}`,
             slug: ch.slug,
             created_at: {
-              time: parseInt(ch.created_at_timestamp),
+              time: parseInt(ch.release_at_timestamp || ch.created_at_timestamp, 10),
               formatted: new Date(ch.created_at).toLocaleString('id-ID')
             }
           })),
           number: chapter.number
         };
-        
+
         return res.json({
           status: true,
           data: responseData
@@ -307,16 +391,16 @@ app.get('/api/v/:chapterSlug', async (req, res) => {
       }
       // Jika bukan manual, tidak didukung
     }
-    
-    return res.status(404).json({ 
-      status: false, 
-      error: 'Chapter tidak ditemukan' 
+
+    return res.status(404).json({
+      status: false,
+      error: 'Chapter tidak ditemukan'
     });
   } catch (error) {
     console.error('Error fetching chapter images:', error);
-    res.status(500).json({ 
-      status: false, 
-      error: 'Internal server error' 
+    res.status(500).json({
+      status: false,
+      error: 'Internal server error'
     });
   }
 });
@@ -391,10 +475,13 @@ const runSqlMigration = async () => {
      VALUES
        ('popup_ads_interval_minutes', '20'),
        ('home_popup_interval_minutes', '30'),
-       ('popup_ads_initial_delay_minutes', '5'),
-       ('popup_ads_unlock_seconds', '10'),
        ('redirect_script_urls', '["https://mbuh.my.id/siap/1770790072377-komiknesia.js"]')
      ON DUPLICATE KEY UPDATE \`value\` = \`value\``,
+    'ALTER TABLE ads ADD COLUMN expired_at DATETIME NULL',
+    'ALTER TABLE chapters ADD COLUMN scheduled_release_at DATETIME NULL AFTER updated_at',
+    'ALTER TABLE chapters ADD INDEX idx_chapters_scheduled_release (scheduled_release_at)',
+    'ALTER TABLE settings MODIFY COLUMN `value` TEXT NULL',
+    'ALTER TABLE contact_info ADD COLUMN telegram VARCHAR(255) NULL AFTER whatsapp',
   ];
 
   for (const statement of statements) {
@@ -402,7 +489,13 @@ const runSqlMigration = async () => {
       await db.execute(statement);
     } catch (error) {
       // Ignore duplicate column when migration already applied.
-      if (error && (error.code === 'ER_DUP_FIELDNAME' || error.errno === 1060)) {
+      if (
+        error &&
+        (error.code === 'ER_DUP_FIELDNAME' ||
+          error.errno === 1060 ||
+          error.code === 'ER_DUP_KEYNAME' ||
+          error.errno === 1061)
+      ) {
         continue;
       }
       throw error;

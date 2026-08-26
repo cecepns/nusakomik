@@ -1,32 +1,13 @@
 const db = require('../db');
+const { createShortLivedCache } = require('../utils/shortLivedCache');
+const {
+  fetchLastChaptersByMangaIds,
+  isActivityColumnReady,
+  checkAndReleaseScheduledChapters,
+} = require('../utils/chapterRelease');
 
-function mapLastChapterRow(row) {
-  const createdTs = parseInt(row.created_at_timestamp, 10) || 0;
-  const updatedRaw = row.updated_at_timestamp;
-  const updatedTs =
-    updatedRaw != null && updatedRaw !== '' ? parseInt(updatedRaw, 10) : null;
-  const chapter = {
-    number: row.number,
-    title: row.title,
-    slug: row.slug,
-    created_at: { time: createdTs },
-  };
-  if (updatedTs != null && !Number.isNaN(updatedTs)) {
-    chapter.updated_at = { time: updatedTs };
-  }
-  return chapter;
-}
-
-/** Short TTL cache + in-flight dedupe for GET /contents (reduces parallel heavy queries). */
-const CONTENTS_LIST_CACHE_TTL_MS = 20 * 1000;
-const CONTENTS_LIST_CACHE_MAX_KEYS = 80;
-
-if (!global.__CONTENTS_LIST_CACHE__) {
-  global.__CONTENTS_LIST_CACHE__ = new Map();
-}
-if (!global.__CONTENTS_LIST_INFLIGHT__) {
-  global.__CONTENTS_LIST_INFLIGHT__ = new Map();
-}
+const contentsListCache = createShortLivedCache({ ttlMs: 60 * 1000, maxKeys: 96 });
+const contentsCountCache = createShortLivedCache({ ttlMs: 5 * 60 * 1000, maxKeys: 48 });
 
 function normalizeGenreKey(genre) {
   if (!genre) return '';
@@ -54,6 +35,7 @@ function buildContentsListCacheKey(query) {
     orderBy = 'Update',
     project,
     popularWindow,
+    source,
   } = query;
   return JSON.stringify({
     q: String(q || '').trim(),
@@ -66,18 +48,31 @@ function buildContentsListCacheKey(query) {
     orderBy: String(orderBy || 'Update'),
     project: project != null ? String(project) : '',
     popularWindow: popularWindow != null ? String(popularWindow) : '',
+    source: source != null ? String(source) : '',
   });
 }
 
-function pruneContentsCacheIfNeeded() {
-  const map = global.__CONTENTS_LIST_CACHE__;
-  while (map.size > CONTENTS_LIST_CACHE_MAX_KEYS) {
-    const k = map.keys().next().value;
-    map.delete(k);
-  }
+function buildContentsCountCacheKey(filters) {
+  const {
+    q,
+    genreArray,
+    status,
+    country,
+    type,
+    project,
+    source,
+  } = filters || {};
+  return JSON.stringify({
+    q: String(q || '').trim(),
+    g: normalizeGenreKey(genreArray),
+    status: status != null ? String(status) : '',
+    country: country != null ? String(country) : '',
+    type: type != null ? String(type) : '',
+    project: project != null ? String(project) : '',
+    source: source != null ? String(source) : '',
+  });
 }
 
-// Helper function copied from server.js, kept internal to contents controller
 async function fetchLocalManga(filters) {
   const {
     q,
@@ -88,22 +83,32 @@ async function fetchLocalManga(filters) {
     orderBy = 'Update',
     project,
     popularWindow,
+    source,
     page = 1,
     perPage = 24,
   } = filters || {};
 
-  const whereConditions = ['m.is_input_manual = TRUE'];
+  const whereConditions = [];
   const params = [];
+
+  if (project === 'true') {
+    whereConditions.push('m.is_project = TRUE');
+  } else {
+    whereConditions.push('m.is_input_manual = TRUE');
+    if (project === 'false') {
+      whereConditions.push('(m.is_project IS NULL OR m.is_project = FALSE)');
+    }
+  }
+
+  if (source && source !== 'all') {
+    whereConditions.push('m.source = ?');
+    params.push(source);
+  }
 
   if (q && q.trim()) {
     whereConditions.push('(m.title LIKE ? OR m.alternative_name LIKE ?)');
     const searchTerm = `%${q.trim()}%`;
     params.push(searchTerm, searchTerm);
-  }
-  if (project === 'true') {
-    whereConditions.push('m.is_project = TRUE');
-  } else if (project === 'false') {
-    whereConditions.push('(m.is_project IS NULL OR m.is_project = FALSE)');
   }
 
   if (status && status !== 'All') {
@@ -160,23 +165,23 @@ async function fetchLocalManga(filters) {
         ' ) pw ON pw.manga_id = m.id'
       : '';
 
-  // Update / default: urutkan dari chapter terakhir. Popular/Az/Za/Added punya aturan sendiri.
   const usesChapterActivitySort =
     orderBy === 'Update' ||
     orderBy == null ||
     orderBy === '' ||
     !['Popular', 'Az', 'Za', 'Added'].includes(orderBy);
-  const fromClause =
+
+  const activityColumnReady = usesChapterActivitySort
+    ? await isActivityColumnReady(db)
+    : false;
+
+  const dataFromClause =
     ' FROM manga m' +
-    (usesChapterActivitySort
-      ? ' LEFT JOIN (' +
-        '   SELECT manga_id, MAX(created_at) AS last_chapter_activity_at' +
-        '   FROM chapters' +
-        '   GROUP BY manga_id' +
-        ' ) lc ON lc.manga_id = m.id'
-      : '') +
     (genreIds.length > 0 ? ' INNER JOIN manga_genres mg ON m.id = mg.manga_id' : '') +
     popularJoin;
+
+  const countFromClause = dataFromClause;
+
   const whereClause = ' WHERE ' + whereConditions.join(' AND ');
   const genreFilterClause = genreIds.length > 0
     ? ' AND mg.category_id IN (' + genreIds.map(() => '?').join(',') + ')'
@@ -194,9 +199,10 @@ async function fetchLocalManga(filters) {
       orderClause = 'ORDER BY m.title DESC';
       break;
     case 'Update':
-      // Paling atas = manga dengan chapter terbaru; tanpa chapter di bawah (bukan m.updated_at / created_at).
       orderClause =
-        'ORDER BY (lc.last_chapter_activity_at IS NULL), lc.last_chapter_activity_at DESC, m.id DESC';
+        usesChapterActivitySort && activityColumnReady
+          ? 'ORDER BY (COALESCE(m.last_chapter_activity_at, m.updated_at) IS NULL), COALESCE(m.last_chapter_activity_at, m.updated_at) DESC, m.id DESC'
+          : 'ORDER BY m.updated_at DESC, m.id DESC';
       break;
     case 'Added':
       orderClause = 'ORDER BY m.created_at DESC, m.id DESC';
@@ -209,7 +215,9 @@ async function fetchLocalManga(filters) {
       break;
     default:
       orderClause =
-        'ORDER BY (lc.last_chapter_activity_at IS NULL), lc.last_chapter_activity_at DESC, m.id DESC';
+        activityColumnReady
+          ? 'ORDER BY (COALESCE(m.last_chapter_activity_at, m.updated_at) IS NULL), COALESCE(m.last_chapter_activity_at, m.updated_at) DESC, m.id DESC'
+          : 'ORDER BY m.updated_at DESC, m.id DESC';
   }
 
   const prefixParams = popularIntervalDays != null ? [popularIntervalDays] : [];
@@ -221,7 +229,7 @@ async function fetchLocalManga(filters) {
   const offset = (Math.max(1, page) - 1) * Math.max(1, perPage);
   const dataQuery =
     'SELECT m.*' +
-    fromClause +
+    dataFromClause +
     whereClause +
     genreFilterClause +
     groupHavingClause +
@@ -230,24 +238,36 @@ async function fetchLocalManga(filters) {
     ' LIMIT ? OFFSET ?';
   const dataParams = [...baseParams, perPage, offset];
 
-  const countQuery = genreIds.length > 0
-    ? `
-      SELECT COUNT(*) AS total
-      FROM (
-        SELECT m.id
-        ${fromClause}
+  const countCacheKey = buildContentsCountCacheKey({
+    q,
+    genreArray,
+    status,
+    country,
+    type,
+    project,
+    source,
+  });
+
+  const totalItems = await contentsCountCache.wrap(countCacheKey, async () => {
+    const countQuery = genreIds.length > 0
+      ? `
+        SELECT COUNT(*) AS total
+        FROM (
+          SELECT m.id
+          ${countFromClause}
+          ${whereClause}
+          ${genreFilterClause}
+          ${groupHavingClause}
+        ) AS filtered_manga
+      `
+      : `
+        SELECT COUNT(*) AS total
+        ${countFromClause}
         ${whereClause}
-        ${genreFilterClause}
-        ${groupHavingClause}
-      ) AS filtered_manga
-    `
-    : `
-      SELECT COUNT(*) AS total
-      ${fromClause}
-      ${whereClause}
-    `;
-  const [countRows] = await db.execute(countQuery, baseParams);
-  const totalItems = Number(countRows?.[0]?.total || 0);
+      `;
+    const [countRows] = await db.execute(countQuery, baseParams);
+    return Number(countRows?.[0]?.total || 0);
+  });
 
   const [mangaRows] = await db.execute(dataQuery, dataParams);
   if (!mangaRows || mangaRows.length === 0) {
@@ -288,35 +308,7 @@ async function fetchLocalManga(filters) {
 
   let lastChaptersByMangaId = {};
   try {
-    const chapterPlaceholders = mangaIds.map(() => '?').join(',');
-    const [lastChapterRows] = await db.execute(
-      `
-        SELECT
-          c.manga_id,
-          c.chapter_number AS number,
-          c.title,
-          c.slug,
-          c.created_at,
-          c.updated_at,
-          UNIX_TIMESTAMP(c.created_at) AS created_at_timestamp,
-          UNIX_TIMESTAMP(c.updated_at) AS updated_at_timestamp
-        FROM chapters c
-        WHERE c.manga_id IN (${chapterPlaceholders})
-        ORDER BY c.manga_id ASC, CAST(c.chapter_number AS UNSIGNED) DESC, c.created_at DESC
-      `,
-      mangaIds
-    );
-
-    lastChaptersByMangaId = lastChapterRows.reduce((acc, row) => {
-      if (!acc[row.manga_id]) {
-        acc[row.manga_id] = [];
-      }
-      if (acc[row.manga_id].length >= 3) {
-        return acc;
-      }
-      acc[row.manga_id].push(mapLastChapterRow(row));
-      return acc;
-    }, {});
+    lastChaptersByMangaId = await fetchLastChaptersByMangaIds(db, mangaIds, 3);
   } catch (err) {
     console.error('Error loading last chapters for local manga:', err);
     lastChaptersByMangaId = {};
@@ -376,35 +368,35 @@ const genres = async (req, res) => {
   }
 };
 
+let lastScheduledCheckTime = 0;
+
 const list = async (req, res) => {
   try {
-    const {
-      q,
-      page = 1,
-      per_page = 40,
-      genre,
-      status,
-      country,
-      type,
-      orderBy = 'Update',
-      project,
-      popularWindow,
-    } = req.query;
+    const now = Date.now();
+    if (now - lastScheduledCheckTime > 30000) {
+      lastScheduledCheckTime = now;
+      const updated = await checkAndReleaseScheduledChapters(db);
+      if (updated) {
+        invalidateContentsCaches();
+      }
+    }
 
     const cacheKey = buildContentsListCacheKey(req.query);
-    const cacheMap = global.__CONTENTS_LIST_CACHE__;
-    const inflightMap = global.__CONTENTS_LIST_INFLIGHT__;
-    const cached = cacheMap.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return res.json(cached.payload);
-    }
+    const payload = await contentsListCache.wrap(cacheKey, async () => {
+      const {
+        q,
+        page = 1,
+        per_page = 40,
+        genre,
+        status,
+        country,
+        type,
+        orderBy = 'Update',
+        project,
+        popularWindow,
+        source,
+      } = req.query;
 
-    if (inflightMap.has(cacheKey)) {
-      const payload = await inflightMap.get(cacheKey);
-      return res.json(payload);
-    }
-
-    const run = (async () => {
       let genreArray = [];
       if (genre) {
         if (Array.isArray(genre)) {
@@ -433,6 +425,7 @@ const list = async (req, res) => {
           orderBy,
           project,
           popularWindow,
+          source,
           page: pageNum,
           perPage,
         });
@@ -452,31 +445,22 @@ const list = async (req, res) => {
           total_pages: Math.ceil(totalItems / perPage),
         },
       };
-    })();
-
-    inflightMap.set(cacheKey, run);
-    let responsePayload;
-    try {
-      responsePayload = await run;
-    } finally {
-      inflightMap.delete(cacheKey);
-    }
-
-    pruneContentsCacheIfNeeded();
-    cacheMap.set(cacheKey, {
-      expiresAt: Date.now() + CONTENTS_LIST_CACHE_TTL_MS,
-      payload: responsePayload,
     });
 
-    res.json(responsePayload);
+    res.json(payload);
   } catch (error) {
     console.error('Error fetching contents:', error);
     res.status(500).json({ status: false, error: 'Internal server error' });
   }
 };
 
+function invalidateContentsCaches() {
+  contentsListCache.invalidate();
+  contentsCountCache.invalidate();
+}
+
 module.exports = {
   genres,
   list,
+  invalidateContentsCaches,
 };
-

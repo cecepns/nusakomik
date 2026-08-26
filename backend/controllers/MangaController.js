@@ -3,8 +3,14 @@ const { generateSlug } = require('../utils/slug');
 const { deleteFile } = require('../utils/files');
 const { uploadFileToS3 } = require('../utils/s3Upload');
 const { deleteUrlFromS3 } = require('../utils/s3Upload');
+const { parseScheduledReleaseAt, refreshMangaChapterActivity } = require('../utils/chapterRelease');
+const { invalidateContentsCaches } = require('./ContentsController');
 const fs = require('fs');
 const path = require('path');
+
+function parseBooleanField(value) {
+  return value === 'true' || value === true || value === 1 || value === '1';
+}
 
 const index = async (req, res) => {
   try {
@@ -76,6 +82,8 @@ const index = async (req, res) => {
 
     for (const m of manga) {
       m.genres = genresByMangaId[m.id] || [];
+      m.is_project = !!m.is_project;
+      m.color = !!m.color;
     }
 
     let countQuery = 'SELECT COUNT(DISTINCT m.id) as total FROM manga m WHERE 1=1';
@@ -138,8 +146,19 @@ const listChapters = async (req, res) => {
 const createChapter = async (req, res) => {
   try {
     const { mangaId } = req.params;
-    const { title, chapter_number } = req.body;
-    const cover = req.file ? `/uploads/${req.file.filename}` : null;
+    const { title, chapter_number, scheduled_release_at, release_mode } = req.body;
+    let cover = null;
+    if (req.file) {
+      const ext = path.extname(req.file.originalname || req.file.filename || '') || '.webp';
+      const key = `komiknesia/chapters/${mangaId}/cover-${Date.now()}${ext}`;
+      cover = await uploadFileToS3(key, req.file.path, req.file.mimetype);
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch { }
+    }
+
+    const wantsScheduled = release_mode === 'scheduled';
+    const parsedSchedule = wantsScheduled ? parseScheduledReleaseAt(scheduled_release_at) : null;
 
     const [mangaRows] = await db.execute('SELECT slug FROM manga WHERE id = ?', [mangaId]);
     if (mangaRows.length === 0) {
@@ -147,12 +166,20 @@ const createChapter = async (req, res) => {
     }
 
     const mangaSlug = mangaRows[0].slug;
-    const chapterSlug = `${mangaSlug}-chapter-${chapter_number}`;
+    let chapterSlug = `${mangaSlug}-chapter-${chapter_number}`;
+    // Ensure slug uniqueness: if slug already exists, append a timestamp suffix
+    const [existingSlugRows] = await db.execute('SELECT id FROM chapters WHERE slug = ?', [chapterSlug]);
+    if (existingSlugRows.length > 0) {
+      chapterSlug = `${chapterSlug}-${Date.now()}`;
+    }
 
     const [result] = await db.execute(
-      'INSERT INTO chapters (manga_id, title, chapter_number, slug, cover) VALUES (?, ?, ?, ?, ?)',
-      [mangaId, title, chapter_number, chapterSlug, cover]
+      'INSERT INTO chapters (manga_id, title, chapter_number, slug, cover, scheduled_release_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [mangaId, title, chapter_number, chapterSlug, cover, parsedSchedule]
     );
+
+    await refreshMangaChapterActivity(db, mangaId);
+    invalidateContentsCaches();
 
     res.status(201).json({ id: result.insertId, message: 'Chapter created successfully' });
   } catch (error) {
@@ -230,9 +257,9 @@ const store = async (req, res) => {
       status,
       rating,
       color,
+      is_project,
       source,
       slug: slugOverride,
-      is_project,
     } = req.body;
 
     const slugSource =
@@ -280,7 +307,7 @@ const store = async (req, res) => {
       `
       INSERT INTO manga (
         title, slug, author, synopsis, category_id, thumbnail, cover_background,
-        alternative_name, content_type, country_id, \`release\`, status, rating, color, source, is_input_manual, is_project
+        alternative_name, content_type, country_id, \`release\`, status, rating, color, is_project, source, is_input_manual
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       [
@@ -297,10 +324,10 @@ const store = async (req, res) => {
         release || null,
         status || 'ongoing',
         rating ? parseFloat(rating) : null,
-        color === 'true' || color === true ? true : false,
+        parseBooleanField(color),
+        parseBooleanField(is_project),
         source || null,
         true,
-        is_project === 'true' || is_project === true ? true : false,
       ]
     );
 
@@ -339,8 +366,8 @@ const update = async (req, res) => {
       status,
       rating,
       color,
-      source,
       is_project,
+      source,
     } = req.body;
 
     const slug = generateSlug(title);
@@ -355,7 +382,7 @@ const update = async (req, res) => {
 
     let query = `UPDATE manga SET 
       title = ?, slug = ?, author = ?, synopsis = ?, category_id = ?,
-      alternative_name = ?, content_type = ?, country_id = ?, \`release\` = ?, status = ?, rating = ?, color = ?, source = ?, is_project = ?`;
+      alternative_name = ?, content_type = ?, country_id = ?, \`release\` = ?, status = ?, rating = ?, color = ?, is_project = ?, source = ?`;
     const params = [
       title,
       slug,
@@ -368,9 +395,9 @@ const update = async (req, res) => {
       release || null,
       status || 'ongoing',
       rating ? parseFloat(rating) : null,
-      color === 'true' || color === true ? true : false,
+      parseBooleanField(color),
+      parseBooleanField(is_project),
       source || null,
-      is_project === 'true' || is_project === true ? true : false,
     ];
 
     if (req.files?.thumbnail && req.files.thumbnail[0]) {
@@ -512,8 +539,9 @@ const search = async (req, res) => {
     }
 
     localResults.sort((a, b) => {
-      const pick = (item) => item.lastChapters?.[0]?.created_at?.time || 0;
-      return pick(b) - pick(a);
+      const aTime = a.lastChapters?.[0]?.created_at?.time || 0;
+      const bTime = b.lastChapters?.[0]?.created_at?.time || 0;
+      return bTime - aTime;
     });
 
     const offset = (pageNum - 1) * perPage;

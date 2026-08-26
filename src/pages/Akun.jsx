@@ -248,19 +248,19 @@ const Akun = () => {
 
       <div className="relative z-10 mx-auto max-w-md px-4 py-14 md:py-24">
         {isAuthenticated ? (
-          <div className="rounded-3xl border border-sky-200/80 bg-white/95 p-6 shadow-[0_7px_0_0_#38bdf8] backdrop-blur-sm dark:border-cyan-200/25 dark:bg-[#0b355f]/95 dark:shadow-[0_7px_0_0_#facc15] sm:p-8">
+          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-md shadow-2xl sm:p-8">
             <div className="mb-6 text-center">
-              <h1 className="text-2xl font-extrabold tracking-tight text-[#163a5f] dark:text-cyan-50 sm:text-3xl">
+              <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
                 Profil
               </h1>
-              <p className="mt-2 text-sm leading-relaxed text-sky-900/75 dark:text-cyan-100/80">
+              <p className="mt-2 text-sm leading-relaxed text-gray-400">
                 Kelola foto, data akun, dan keamanan password.
               </p>
             </div>
 
             <div className="mb-6 flex flex-col items-center">
               <div className="relative inline-block">
-                <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-slate-200 ring-4 ring-sky-200/90 dark:bg-[#0a2d52] dark:ring-cyan-400/35">
+                <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-white/10 ring-4 ring-sky-500/40">
                   {user?.profile_image ? (
                     <img
                       src={getImageUrl(user.profile_image)}
@@ -268,12 +268,12 @@ const Akun = () => {
                       className="h-full w-full object-cover"
                     />
                   ) : (
-                    <span className="text-4xl font-bold text-sky-700/70 dark:text-cyan-200/80">
+                    <span className="text-4xl font-bold text-sky-400">
                       {(user?.username || 'U').charAt(0).toUpperCase()}
                     </span>
                   )}
                 </div>
-                <label className="absolute bottom-0 right-0 cursor-pointer rounded-full border border-sky-400/40 bg-sky-600 p-2.5 text-white shadow-[0_4px_0_0_#0369a1] transition-all duration-200 hover:-translate-y-0.5 hover:bg-sky-500 hover:shadow-[0_5px_0_0_#0369a1] active:translate-y-0.5 active:shadow-[0_2px_0_0_#0369a1] dark:border-cyan-200/30 dark:bg-[#0a2d52] dark:shadow-[0_4px_0_0_#42a5f5] dark:hover:shadow-[0_5px_0_0_#60a5fa] dark:active:shadow-[0_2px_0_0_#3b82f6]">
+                <label className="absolute bottom-0 right-0 cursor-pointer rounded-full border border-sky-400/50 bg-gradient-to-r from-sky-400 to-blue-600 p-2.5 text-white shadow-lg shadow-sky-500/20 transition-all duration-200 hover:from-sky-500 hover:to-blue-700 active:scale-95">
                   <input
                     type="file"
                     accept="image/*"
@@ -288,28 +288,28 @@ const Akun = () => {
                   )}
                 </label>
               </div>
-              <p className="mt-3 text-xs text-sky-800/70 dark:text-cyan-200/60">Tap ikon kamera untuk ganti foto</p>
+              <p className="mt-3 text-xs text-gray-400">Tap ikon kamera untuk ganti foto</p>
             </div>
 
             {user?.membership_active && (
-              <div className="mb-6 rounded-2xl border border-amber-300/80 bg-amber-50/95 px-4 py-3 text-left text-sm text-amber-950 shadow-[0_4px_0_0_#f59e0b] dark:border-amber-400/35 dark:bg-amber-500/15 dark:text-amber-100 dark:shadow-[0_4px_0_0_rgba(251,191,36,0.45)]">
-                <p className="font-semibold">Premium Member</p>
-                <p className="mt-0.5 text-amber-900/90 dark:text-amber-100/90">
+              <div className="mb-6 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-left text-sm text-amber-200 shadow-md">
+                <p className="font-semibold text-amber-300">Premium Member</p>
+                <p className="mt-0.5 text-amber-200/90">
                   Aktif sampai{' '}
                   {formatMembershipDate(user?.membership_expires_at) || 'waktu yang tidak ditentukan'}
                 </p>
               </div>
             )}
 
-            <div className="rounded-2xl border border-slate-200/90 bg-white/90 p-5 shadow-[0_5px_0_0_rgba(56,189,248,0.45)] dark:border-cyan-200/20 dark:bg-[#0a2d52]/40 dark:shadow-[0_5px_0_0_rgba(250,204,21,0.28)] sm:p-6">
-              <h2 className="mb-4 text-left text-sm font-bold uppercase tracking-wide text-[#163a5f] dark:text-cyan-100">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 shadow-xl sm:p-6">
+              <h2 className="mb-4 text-left text-sm font-bold uppercase tracking-wide text-white">
                 Data profil
               </h2>
               <form onSubmit={handleUpdateProfileInfo} className="space-y-5 text-left">
                 <div>
                   <label
                     htmlFor="akun-profile-name"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-300"
                   >
                     Nama
                   </label>
@@ -318,7 +318,7 @@ const Akun = () => {
                     type="text"
                     value={profileName}
                     onChange={(e) => setProfileName(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:placeholder:text-cyan-200/40 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     disabled={profileLoading}
                     required
                     autoComplete="name"
@@ -327,7 +327,7 @@ const Akun = () => {
                 <div>
                   <label
                     htmlFor="akun-profile-username"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-300"
                   >
                     Username
                   </label>
@@ -336,7 +336,7 @@ const Akun = () => {
                     type="text"
                     value={profileUsername}
                     onChange={(e) => setProfileUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
-                    className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:placeholder:text-cyan-200/40 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     disabled={profileLoading}
                     minLength={3}
                     required
@@ -346,7 +346,7 @@ const Akun = () => {
                 <div>
                   <label
                     htmlFor="akun-profile-email"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-300"
                   >
                     Email
                   </label>
@@ -355,7 +355,7 @@ const Akun = () => {
                     type="email"
                     value={profileEmail}
                     onChange={(e) => setProfileEmail(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:placeholder:text-cyan-200/40 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     disabled={profileLoading}
                     placeholder="email@contoh.com"
                     autoComplete="email"
@@ -364,7 +364,7 @@ const Akun = () => {
                 <div>
                   <label
                     htmlFor="akun-profile-bio"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-300"
                   >
                     Bio
                   </label>
@@ -372,20 +372,20 @@ const Akun = () => {
                     id="akun-profile-bio"
                     value={profileBio}
                     onChange={(e) => setProfileBio(e.target.value)}
-                    className="min-h-[7rem] w-full resize-y rounded-xl border border-slate-200 bg-white/90 px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:placeholder:text-cyan-200/40 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="min-h-[7rem] w-full resize-y rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     disabled={profileLoading}
                     rows={4}
                     maxLength={500}
                     placeholder="Tulis bio singkat tentang kamu..."
                   />
-                  <p className="mt-1.5 text-xs text-sky-800/60 dark:text-cyan-200/50">
+                  <p className="mt-1.5 text-xs text-gray-400">
                     {profileBio.length}/500 karakter
                   </p>
                 </div>
                 <button
                   type="submit"
                   disabled={profileLoading}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-500/25 bg-sky-600 py-3.5 text-[15px] font-semibold text-white shadow-[0_7px_0_0_#0369a1] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_0_0_#0369a1] active:translate-y-0.5 active:shadow-[0_4px_0_0_#0369a1] disabled:pointer-events-none disabled:opacity-55 dark:border-cyan-200/20 dark:bg-[#0a2d52] dark:text-cyan-50 dark:shadow-[0_7px_0_0_#42a5f5] dark:hover:shadow-[0_8px_0_0_#60a5fa] dark:active:shadow-[0_4px_0_0_#3b82f6] dark:hover:brightness-110"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-400 to-blue-600 py-3.5 text-[15px] font-bold text-white shadow-md shadow-sky-500/20 transition-all duration-200 hover:from-sky-500 hover:to-blue-700 active:scale-98 disabled:pointer-events-none disabled:opacity-55"
                 >
                   {profileLoading ? <Loader2 className="h-5 w-5 shrink-0 animate-spin" /> : null}
                   Simpan profil
@@ -393,15 +393,15 @@ const Akun = () => {
               </form>
             </div>
 
-            <div className="mt-6 rounded-2xl border border-slate-200/90 bg-slate-50/90 p-5 shadow-[0_5px_0_0_rgba(100,116,139,0.55)] dark:border-cyan-200/15 dark:bg-[#082441]/80 dark:shadow-[0_5px_0_0_rgba(56,189,248,0.2)] sm:p-6">
-              <h2 className="mb-4 text-left text-sm font-bold uppercase tracking-wide text-slate-800 dark:text-cyan-100">
+            <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] p-5 shadow-xl sm:p-6">
+              <h2 className="mb-4 text-left text-sm font-bold uppercase tracking-wide text-white">
                 Ubah password
               </h2>
               <form onSubmit={handleUpdatePassword} className="space-y-5 text-left">
                 <div>
                   <label
                     htmlFor="akun-pw-current"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-300"
                   >
                     Password lama
                   </label>
@@ -410,7 +410,7 @@ const Akun = () => {
                     type="password"
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all focus:border-slate-500 focus:ring-2 focus:ring-slate-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     disabled={passwordLoading}
                     autoComplete="current-password"
                   />
@@ -419,7 +419,7 @@ const Akun = () => {
                   <div>
                     <label
                       htmlFor="akun-pw-new"
-                      className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                      className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-300"
                     >
                       Password baru
                     </label>
@@ -428,7 +428,7 @@ const Akun = () => {
                       type="password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all focus:border-slate-500 focus:ring-2 focus:ring-slate-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                       disabled={passwordLoading}
                       autoComplete="new-password"
                     />
@@ -436,7 +436,7 @@ const Akun = () => {
                   <div>
                     <label
                       htmlFor="akun-pw-confirm"
-                      className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                      className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-300"
                     >
                       Konfirmasi password baru
                     </label>
@@ -445,7 +445,7 @@ const Akun = () => {
                       type="password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all focus:border-slate-500 focus:ring-2 focus:ring-slate-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                       disabled={passwordLoading}
                       autoComplete="new-password"
                     />
@@ -454,7 +454,7 @@ const Akun = () => {
                 <button
                   type="submit"
                   disabled={passwordLoading}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700/30 bg-slate-800 py-3.5 text-[15px] font-semibold text-white shadow-[0_7px_0_0_#0f172a] transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-700 hover:shadow-[0_8px_0_0_#0f172a] active:translate-y-0.5 active:shadow-[0_4px_0_0_#0f172a] disabled:pointer-events-none disabled:opacity-55 dark:border-cyan-200/15 dark:bg-[#0a2d52] dark:text-cyan-50 dark:shadow-[0_7px_0_0_#38bdf8] dark:hover:shadow-[0_8px_0_0_#7dd3fc] dark:active:shadow-[0_4px_0_0_#0ea5e9] dark:hover:brightness-110"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-400 to-blue-600 py-3.5 text-[15px] font-bold text-white shadow-md shadow-sky-500/20 transition-all duration-200 hover:from-sky-500 hover:to-blue-700 active:scale-98 disabled:pointer-events-none disabled:opacity-55"
                 >
                   {passwordLoading ? <Loader2 className="h-5 w-5 shrink-0 animate-spin" /> : null}
                   Simpan password
@@ -468,7 +468,7 @@ const Akun = () => {
                 logout();
                 toast.success('Berhasil keluar.');
               }}
-              className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-slate-100 py-3.5 text-[15px] font-semibold text-slate-800 shadow-[0_6px_0_0_#94a3b8] transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-200 hover:shadow-[0_7px_0_0_#94a3b8] active:translate-y-0.5 active:shadow-[0_3px_0_0_#94a3b8] dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-100 dark:shadow-[0_6px_0_0_#475569] dark:hover:bg-slate-700 dark:hover:shadow-[0_7px_0_0_#64748b] dark:active:shadow-[0_3px_0_0_#475569]"
+              className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 py-3.5 text-[15px] font-bold text-gray-200 shadow-md transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-98"
             >
               <LogOut className="h-5 w-5 shrink-0" />
               Keluar
@@ -476,17 +476,17 @@ const Akun = () => {
           </div>
         ) : (
           /* Login / Register */
-          <div className="rounded-3xl border border-sky-200/80 bg-white/95 p-6 shadow-[0_7px_0_0_#38bdf8] backdrop-blur-sm dark:border-cyan-200/25 dark:bg-[#0b355f]/95 dark:shadow-[0_7px_0_0_#facc15] sm:p-8">
+          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-md shadow-2xl sm:p-8">
             <div className="mb-6 text-center">
-              <h1 className="text-2xl font-extrabold tracking-tight text-[#163a5f] dark:text-cyan-50 sm:text-3xl">
+              <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
                 Akun
               </h1>
-              <p className="mt-2 text-sm leading-relaxed text-sky-900/75 dark:text-cyan-100/80">
+              <p className="mt-2 text-sm leading-relaxed text-gray-400">
                 Masuk dengan akun yang ada atau daftar akun baru.
               </p>
             </div>
 
-            <div className="mb-6 flex gap-1 rounded-2xl border border-slate-200/90 bg-slate-100/80 p-1 dark:border-cyan-200/15 dark:bg-[#0a2d52]/60">
+            <div className="mb-6 flex gap-1 rounded-2xl border border-white/10 bg-white/5 p-1">
               <button
                 type="button"
                 onClick={() => {
@@ -494,8 +494,8 @@ const Akun = () => {
                 }}
                 className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-all duration-200 ${
                   mode === 'login'
-                    ? 'bg-white text-sky-800 shadow-[0_4px_0_0_#38bdf8] dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_4px_0_0_#42a5f5]'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-cyan-200/70 dark:hover:text-cyan-100'
+                    ? 'bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md font-bold'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-gray-300 dark:hover:text-white'
                 }`}
               >
                 <LogIn className="h-4 w-4 shrink-0" />
@@ -508,8 +508,8 @@ const Akun = () => {
                 }}
                 className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-all duration-200 ${
                   mode === 'register'
-                    ? 'bg-white text-sky-800 shadow-[0_4px_0_0_#38bdf8] dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_4px_0_0_#42a5f5]'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-cyan-200/70 dark:hover:text-cyan-100'
+                    ? 'bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md font-bold'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-gray-300 dark:hover:text-white'
                 }`}
               >
                 <UserPlus className="h-4 w-4 shrink-0" />
@@ -522,7 +522,7 @@ const Akun = () => {
                 <div>
                   <label
                     htmlFor="akun-login-username"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-gray-200"
                   >
                     Username atau email
                   </label>
@@ -531,7 +531,7 @@ const Akun = () => {
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:placeholder:text-cyan-200/40 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     placeholder="Username atau email"
                     required
                     disabled={loading}
@@ -541,7 +541,7 @@ const Akun = () => {
                 <div>
                   <label
                     htmlFor="akun-login-password"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-gray-200"
                   >
                     Password
                   </label>
@@ -550,18 +550,18 @@ const Akun = () => {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:placeholder:text-cyan-200/40 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     placeholder="••••••••"
                     required
                     disabled={loading}
                     autoComplete="current-password"
                   />
                 </div>
-                <p className="text-center text-sm leading-relaxed text-slate-600 dark:text-cyan-100/75">
+                <p className="text-center text-sm leading-relaxed text-slate-600 dark:text-gray-300">
                   Lupa sandi?{' '}
                   <Link
                     to="/contact"
-                    className="font-semibold text-sky-700 underline decoration-sky-600/40 underline-offset-2 transition-colors hover:text-sky-800 dark:text-cyan-300 dark:decoration-cyan-400/40 dark:hover:text-cyan-200"
+                    className="font-semibold text-sky-400 underline decoration-sky-500/40 underline-offset-2 transition-colors hover:text-sky-300"
                   >
                     Hubungi admin
                   </Link>
@@ -570,7 +570,7 @@ const Akun = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="mt-1 flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-500/25 bg-sky-600 py-3.5 text-[15px] font-semibold text-white shadow-[0_7px_0_0_#0369a1] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_0_0_#0369a1] active:translate-y-0.5 active:shadow-[0_4px_0_0_#0369a1] disabled:pointer-events-none disabled:opacity-55 dark:border-cyan-200/20 dark:bg-[#0a2d52] dark:text-cyan-50 dark:shadow-[0_7px_0_0_#42a5f5] dark:hover:shadow-[0_8px_0_0_#60a5fa] dark:active:shadow-[0_4px_0_0_#3b82f6] dark:hover:brightness-110"
+                  className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-400 to-blue-600 py-3.5 text-[15px] font-bold text-white shadow-md shadow-sky-500/20 transition-all duration-200 hover:from-sky-500 hover:to-blue-700 active:scale-98 disabled:pointer-events-none disabled:opacity-55"
                 >
                   {loading ? (
                     <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
@@ -585,7 +585,7 @@ const Akun = () => {
                 <div>
                   <label
                     htmlFor="akun-reg-name"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-gray-200"
                   >
                     Nama
                   </label>
@@ -594,7 +594,7 @@ const Akun = () => {
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:placeholder:text-cyan-200/40 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     placeholder="Nama lengkap"
                     required
                     disabled={loading}
@@ -604,7 +604,7 @@ const Akun = () => {
                 <div>
                   <label
                     htmlFor="akun-reg-username"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-gray-200"
                   >
                     Username (unik, min. 3 karakter)
                   </label>
@@ -613,7 +613,7 @@ const Akun = () => {
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
-                    className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:placeholder:text-cyan-200/40 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     placeholder="username_unik"
                     required
                     minLength={3}
@@ -624,7 +624,7 @@ const Akun = () => {
                 <div>
                   <label
                     htmlFor="akun-reg-email"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-gray-200"
                   >
                     Email (opsional)
                   </label>
@@ -633,7 +633,7 @@ const Akun = () => {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:placeholder:text-cyan-200/40 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     placeholder="email@contoh.com"
                     disabled={loading}
                     autoComplete="email"
@@ -642,7 +642,7 @@ const Akun = () => {
                 <div>
                   <label
                     htmlFor="akun-reg-password"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-sky-800/90 dark:text-cyan-100/85"
+                    className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-gray-200"
                   >
                     Password
                   </label>
@@ -651,7 +651,7 @@ const Akun = () => {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3.5 text-[15px] text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 dark:border-cyan-200/20 dark:bg-[#0a2d52]/90 dark:text-cyan-50 dark:placeholder:text-cyan-200/40 dark:focus:border-cyan-300/50 dark:focus:ring-cyan-400/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-[15px] text-gray-100 placeholder:text-gray-500 outline-none transition-all focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"
                     placeholder="••••••••"
                     required
                     disabled={loading}
@@ -661,7 +661,7 @@ const Akun = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="mt-1 flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-500/25 bg-sky-600 py-3.5 text-[15px] font-semibold text-white shadow-[0_7px_0_0_#0369a1] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_0_0_#0369a1] active:translate-y-0.5 active:shadow-[0_4px_0_0_#0369a1] disabled:pointer-events-none disabled:opacity-55 dark:border-cyan-200/20 dark:bg-[#0a2d52] dark:text-cyan-50 dark:shadow-[0_7px_0_0_#42a5f5] dark:hover:shadow-[0_8px_0_0_#60a5fa] dark:active:shadow-[0_4px_0_0_#3b82f6] dark:hover:brightness-110"
+                  className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-400 to-blue-600 py-3.5 text-[15px] font-bold text-white shadow-md shadow-sky-500/20 transition-all duration-200 hover:from-sky-500 hover:to-blue-700 active:scale-98 disabled:pointer-events-none disabled:opacity-55"
                 >
                   {loading ? (
                     <Loader2 className="h-5 w-5 shrink-0 animate-spin" />

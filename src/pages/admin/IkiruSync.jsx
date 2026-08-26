@@ -103,7 +103,7 @@ export default function IkiruSync() {
       stage: 'fetch_manga_init',
     });
 
-    const saveToS3 = false; // new default: store Ikiru URLs directly (no S3 download/upload)
+    const saveToS3 = true; // new default: upload to S3 first
 
     const initBatchSize = mode === 'full' ? 100 : undefined;
     let batchOffset = 0;
@@ -342,7 +342,7 @@ export default function IkiruSync() {
               <div>
                 <strong className="font-semibold">Cloudflare</strong> — setelah verifikasi bot di browser,
                 salin nilai header <code className="px-1 rounded bg-amber-100/80 dark:bg-amber-900/50">Cookie</code>{' '}
-                untuk <code className="px-1 rounded bg-amber-100/80 dark:bg-amber-900/50">https://04.ikiru.wtf</code>{' '}
+                untuk <code className="px-1 rounded bg-amber-100/80 dark:bg-amber-900/50">v6.kiryuu.to</code>{' '}
                 (DevTools → Application → Cookies, atau Network). Tempel di bawah lalu simpan — disimpan di server
                 sebagai <code className="px-1 rounded bg-amber-100/80 dark:bg-amber-900/50">backend/data/ikiru-cloudflare-cookies.txt</code>{' '}
                 (tanpa env). Cookie biasanya terikat IP server.

@@ -4,7 +4,7 @@ import { getImageUrl } from "../utils/api";
 
 /** Key lama (sebelum dismiss hanya in-memory) — dibersihkan tiap mount agar reload selalu bisa menampilkan lagi */
 function legacyDismissedKey(position) {
-  return `nusakomik_floating_fixed_${position}_dismissed_ad_id`;
+  return `komiknesia_floating_fixed_${position}_dismissed_ad_id`;
 }
 
 /**
@@ -13,9 +13,11 @@ function legacyDismissedKey(position) {
  * Tutup hanya untuk kunjungan ini; reload halaman / kembali dari BFCache menampilkan lagi.
  */
 const FloatingFixedAd = ({ position, ads }) => {
-  const ad = ads?.[0];
-  const [dismissed, setDismissed] = useState(false);
-  const prevAdIdRef = useRef(undefined);
+  const [dismissedIds, setDismissedIds] = useState([]);
+
+  const getAdId = (ad, index) => (ad?.id != null ? String(ad.id) : `ad-idx-${index}`);
+  const currentIds = (ads || []).map((ad, index) => getAdId(ad, index));
+  const prevIdsRef = useRef([]);
 
   useLayoutEffect(() => {
     try {
@@ -28,33 +30,33 @@ const FloatingFixedAd = ({ position, ads }) => {
   // Pulihkan setelah navigasi back/forward (bfcache) — state React di-restore tapi user mengharap iklan tampil lagi
   useEffect(() => {
     const onPageShow = (e) => {
-      if (e.persisted) setDismissed(false);
+      if (e.persisted) setDismissedIds([]);
     };
     window.addEventListener("pageshow", onPageShow);
     return () => window.removeEventListener("pageshow", onPageShow);
   }, []);
 
-  // Hanya tampilkan lagi otomatis jika creative benar-benar berganti (ID beda)
+  // Tampilkan lagi otomatis jika creative baru masuk (yang sebelumnya tidak ada)
   useEffect(() => {
-    const id = ad?.id == null ? undefined : String(ad.id);
-    if (prevAdIdRef.current !== undefined && id !== undefined && id !== prevAdIdRef.current) {
-      setDismissed(false);
+    const newIds = currentIds.filter((id) => !prevIdsRef.current.includes(id));
+    if (newIds.length > 0) {
+      setDismissedIds((prev) => prev.filter((id) => !newIds.includes(id)));
     }
-    if (id !== undefined) {
-      prevAdIdRef.current = id;
-    }
-  }, [ad?.id]);
+    prevIdsRef.current = currentIds;
+  }, [JSON.stringify(currentIds)]);
 
-  if (!ad || dismissed) return null;
+  const activeAds = (ads || []).filter((ad, index) => {
+    if (!ad) return false;
+    const adId = getAdId(ad, index);
+    return !dismissedIds.includes(adId);
+  });
 
-  const dismiss = () => {
-    setDismissed(true);
-  };
+  if (activeAds.length === 0) return null;
 
-  const openLink = () => {
-    if (ad.link_url) {
-      window.open(ad.link_url, "_blank", "noopener,noreferrer");
-    }
+  const handleDismissAll = (e) => {
+    e.stopPropagation();
+    const activeIds = activeAds.map((ad, index) => getAdId(ad, index));
+    setDismissedIds((prev) => [...prev, ...activeIds]);
   };
 
   const isTop = position === "top";
@@ -62,10 +64,7 @@ const FloatingFixedAd = ({ position, ads }) => {
   const closeBtn = (
     <button
       type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        dismiss();
-      }}
+      onClick={handleDismissAll}
       className={`relative z-[2] bg-red-600 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-md ring-1 ring-red-800/60 transition-colors hover:bg-red-500 ${
         isTop
           ? "mt-[-1px] rounded-b-md rounded-t-none"
@@ -77,52 +76,67 @@ const FloatingFixedAd = ({ position, ads }) => {
     </button>
   );
 
-  const adPanel = (
-    <div
-      role={ad.link_url ? "button" : undefined}
-      tabIndex={ad.link_url ? 0 : undefined}
-      onClick={ad.link_url ? openLink : undefined}
-      onKeyDown={
-        ad.link_url
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                openLink();
-              }
-            }
-          : undefined
-      }
-      className={`w-full overflow-hidden bg-slate-900/40 shadow-2xl ring-1 ring-white/20 dark:bg-black/50 ${
-        isTop ? "rounded-t-xl rounded-b-none" : "rounded-b-xl rounded-t-none"
-      } ${ad.link_url ? "cursor-pointer" : ""}`}
-    >
-      <LazyImage
-        src={getImageUrl(ad.image)}
-        alt={ad.image_alt || ad.title || "Iklan"}
-        title={ad.title || ad.image_alt || undefined}
-        className="max-h-[100px] w-full object-contain sm:max-h-[120px] md:max-h-[140px]"
-        wrapperClassName="block w-full"
-      />
-    </div>
-  );
+  const containerClass = `pointer-events-auto fixed left-1/2 z-[48] flex flex-col items-center -translate-x-1/2 px-0 transition-all ${
+    isTop
+      ? "top-[56px] md:top-[64px]"
+      : "bottom-[calc(52px+env(safe-area-inset-bottom,0px))] md:bottom-0"
+  } ${
+    activeAds.length > 1
+      ? "w-full max-w-[728px] md:max-w-[1000px]"
+      : "w-full max-w-[728px]"
+  }`;
+
+  const adsWrapperClass =
+    activeAds.length > 1
+      ? "grid grid-cols-1 md:grid-cols-2 gap-0 md:gap-0 w-full justify-items-center"
+      : "flex flex-col gap-0 w-full items-center";
 
   return (
-    <div
-      className={`pointer-events-auto fixed left-1/2 z-[48] flex w-[min(100vw-1rem,728px)] max-w-full -translate-x-1/2 flex-col items-center px-2 ${
-        isTop ? "top-16 md:top-20" : "bottom-14 md:bottom-3"
-      }`}
-    >
-      {isTop ? (
-        <>
-          {adPanel}
-          {closeBtn}
-        </>
-      ) : (
-        <>
-          {closeBtn}
-          {adPanel}
-        </>
-      )}
+    <div className={containerClass}>
+      {!isTop && closeBtn}
+
+      <div className={adsWrapperClass}>
+        {activeAds.map((ad, index) => {
+          const adId = getAdId(ad, index);
+          const openLink = () => {
+            if (ad.link_url) {
+              window.open(ad.link_url, "_blank", "noopener,noreferrer");
+            }
+          };
+
+          return (
+            <div
+              key={adId}
+              role={ad.link_url ? "button" : undefined}
+              tabIndex={ad.link_url ? 0 : undefined}
+              onClick={ad.link_url ? openLink : undefined}
+              onKeyDown={
+                ad.link_url
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openLink();
+                      }
+                    }
+                  : undefined
+              }
+              className={`w-full aspect-[728/90] overflow-hidden bg-black/90 shadow-2xl ${
+                ad.link_url ? "cursor-pointer" : ""
+              }`}
+            >
+              <LazyImage
+                src={getImageUrl(ad.image)}
+                alt={ad.image_alt || ad.title || "Iklan"}
+                title={ad.title || ad.image_alt || undefined}
+                className="w-full h-full object-fill block"
+                wrapperClassName="block w-full h-full"
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {isTop && closeBtn}
     </div>
   );
 };

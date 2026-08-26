@@ -4,6 +4,7 @@ import { Helmet } from "react-helmet-async";
 import {
   ArrowLeft,
   Bookmark,
+  Flame,
   History,
   ListChecks,
   LogIn,
@@ -18,18 +19,20 @@ import { useAds } from "../hooks/useAds";
 import { apiClient, getImageUrl } from "../utils/api";
 import { removeFromHistory, clearHistory } from "../utils/historyManager";
 import { useAuth } from "../contexts/AuthContext";
+import ChapterAccessLink from "../components/ChapterAccessLink";
 
-/** Tombol — selaras Content.jsx (chip + bayangan offset) */
+/** Tombol — selaras Tema Biru Gradient (chip + bayangan offset) */
 const contentBtnTrans = "transition-all duration-200";
-const contentFilterInactive = `rounded-xl border ${contentBtnTrans} border-slate-200 bg-slate-50 text-slate-700 shadow-[0_3px_0_0_#e2e8f0] hover:-translate-y-0.5 hover:shadow-[0_4px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-primary-600 dark:bg-primary-800 dark:text-gray-200 dark:shadow-[0_3px_0_0_#1e3a5f] dark:hover:bg-primary-800`;
-const contentFilterActive = `rounded-xl border ${contentBtnTrans} border-sky-500/50 bg-sky-600 text-white shadow-[0_4px_0_0_#0369a1] dark:border-cyan-400/40 dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_4px_0_0_#38bdf8]`;
-const contentCtaPrimary = `rounded-xl border border-sky-500/25 bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_5px_0_0_#0369a1] ${contentBtnTrans} hover:-translate-y-0.5 hover:shadow-[0_6px_0_0_#0369a1] active:translate-y-0.5 active:shadow-[0_3px_0_0_#0369a1] dark:border-cyan-200/20 dark:bg-[#0a2d52] dark:text-cyan-50 dark:shadow-[0_5px_0_0_#0ea5e9] dark:hover:shadow-[0_6px_0_0_#38bdf8] dark:active:shadow-[0_3px_0_0_#0369a1] dark:hover:brightness-110`;
+const contentFilterInactive = `rounded-xl border ${contentBtnTrans} border-slate-200 bg-slate-50 text-slate-700 shadow-[0_3px_0_0_#e2e8f0] hover:-translate-y-0.5 hover:shadow-[0_4px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-sky-900/60 dark:bg-[#0b1628] dark:text-gray-200 dark:shadow-[0_3px_0_0_#1e3a8a] dark:hover:border-sky-500/80 dark:hover:bg-[#0f1d35]`;
+const contentFilterActive = `rounded-xl border ${contentBtnTrans} border-sky-400/50 bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-[0_4px_0_0_#1d4ed8] dark:border-sky-400/40 dark:bg-gradient-to-r dark:from-sky-400 dark:to-blue-600 dark:text-white dark:shadow-[0_4px_0_0_#1d4ed8]`;
+const contentCtaPrimary = `rounded-xl border border-sky-400/30 bg-gradient-to-r from-sky-400 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_5px_0_0_#1d4ed8] ${contentBtnTrans} hover:-translate-y-0.5 hover:shadow-[0_6px_0_0_#1d4ed8] active:translate-y-0.5 active:shadow-[0_3px_0_0_#1d4ed8] dark:border-sky-400/20 dark:bg-gradient-to-r dark:from-sky-400 dark:to-blue-600 dark:text-white dark:shadow-[0_5px_0_0_#1d4ed8] dark:hover:shadow-[0_6px_0_0_#2563eb] dark:active:shadow-[0_3px_0_0_#1d4ed8] dark:hover:brightness-110`;
 const paginationBtnClass = `${contentFilterInactive} px-4 py-2.5 text-sm font-semibold disabled:pointer-events-none disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:shadow-[0_3px_0_0_#e2e8f0] dark:disabled:opacity-40`;
 const dangerIconBtnClass = `rounded-xl border border-red-500/40 bg-red-600 p-2 text-white shadow-[0_3px_0_0_rgb(127,29,29)] transition-all duration-200 hover:brightness-105 active:translate-y-px active:shadow-[0_2px_0_0_rgb(127,29,29)] dark:border-red-500/30 dark:shadow-[0_3px_0_0_rgb(69,10,10)]`;
 const dangerOutlineBtnClass = `inline-flex items-center gap-2 rounded-xl border border-red-500/40 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_0_0_rgb(127,29,29)] ${contentBtnTrans} hover:brightness-105 active:translate-y-px active:shadow-[0_2px_0_0_rgb(127,29,29)] dark:shadow-[0_4px_0_0_rgb(69,10,10)]`;
-const linkChipBtnClass = `max-w-fit rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs font-medium text-slate-800 shadow-[0_2px_0_0_#e2e8f0] transition-all duration-200 hover:-translate-y-px hover:bg-white hover:shadow-[0_3px_0_0_#cbd5e1] dark:border-primary-600 dark:bg-primary-800 dark:text-gray-200 dark:shadow-[0_2px_0_0_#1e3a5f] dark:hover:bg-primary-700 md:text-sm`;
+const linkChipBtnClass = `max-w-fit rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs font-medium text-slate-800 shadow-[0_2px_0_0_#e2e8f0] transition-all duration-200 hover:-translate-y-px hover:bg-white hover:shadow-[0_3px_0_0_#cbd5e1] dark:border-white/10 dark:bg-black dark:text-gray-200 shadow-sm md:text-sm`;
 
 const VALID_TABS = ["bookmark", "readlist", "history"];
+const VALID_POPULAR_TYPES = ["manga", "manhwa", "manhua"];
 
 const Library = () => {
   const navigate = useNavigate();
@@ -37,10 +40,29 @@ const Library = () => {
   const { isAuthenticated } = useAuth();
   const tabParam = (searchParams.get("tab") || "bookmark").toLowerCase();
   const activeTabId = VALID_TABS.includes(tabParam) ? tabParam : "bookmark";
+  const popularParam = (searchParams.get("popular") || "manga").toLowerCase();
+  const activePopularType = VALID_POPULAR_TYPES.includes(popularParam)
+    ? popularParam
+    : "manga";
 
   const setActiveTab = (id) => {
-    const map = { bookmark: "bookmark", readlist: "readlist", history: "history" };
-    setSearchParams({ tab: map[id] || "bookmark" });
+    const map = {
+      bookmark: "bookmark",
+      readlist: "readlist",
+      history: "history",
+    };
+    const nextTab = map[id] || "bookmark";
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", nextTab);
+    setSearchParams(next);
+  };
+
+  const setPopularType = (type) => {
+    const nextType = VALID_POPULAR_TYPES.includes(type) ? type : "manga";
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", "popular");
+    next.set("popular", nextType);
+    setSearchParams(next);
   };
   const [historyList, setHistoryList] = useState([]);
   const [historyPage, setHistoryPage] = useState(1);
@@ -50,6 +72,8 @@ const Library = () => {
   const [bookmarkHasMore, setBookmarkHasMore] = useState(false);
   const [bookmarkTotalPages, setBookmarkTotalPages] = useState(1);
   const [bookmarkLoading, setBookmarkLoading] = useState(false);
+  const [popularMangaList, setPopularMangaList] = useState([]);
+  const [popularMangaLoading, setPopularMangaLoading] = useState(false);
 
   const [readlists, setReadlists] = useState([]);
   const [readlistsLoading, setReadlistsLoading] = useState(false);
@@ -143,6 +167,24 @@ const Library = () => {
       setReadlistsLoading(false);
     }
   }, [isAuthenticated]);
+
+  const loadPopularManga = useCallback(async () => {
+    setPopularMangaLoading(true);
+    try {
+      const res = await apiClient.getContents({
+        page: 1,
+        per_page: 50,
+        orderBy: "Popular",
+        type: activePopularType,
+      });
+      setPopularMangaList(Array.isArray(res?.data) ? res.data : []);
+    } catch (err) {
+      console.error("Error loading popular manga:", err);
+      setPopularMangaList([]);
+    } finally {
+      setPopularMangaLoading(false);
+    }
+  }, [activePopularType]);
 
   const loadReadlistDetail = useCallback(
     async (id) => {
@@ -241,6 +283,12 @@ const Library = () => {
     if (activeTabId === "bookmark" && isAuthenticated) loadBookmarks();
   }, [activeTabId, isAuthenticated, loadBookmarks]);
 
+  useEffect(() => {
+    if (activeTabId === "popular") {
+      loadPopularManga();
+    }
+  }, [activeTabId, loadPopularManga]);
+
   // Reset bookmark pagination when leaving/entering tab
   useEffect(() => {
     if (activeTabId === "bookmark") {
@@ -282,17 +330,17 @@ const Library = () => {
       </Helmet>
       {/* Library Top Ads - 6 ads */}
       {libraryTopAds.length > 0 && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 mb-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 mb-2">
           <AdBanner ads={libraryTopAds} layout="grid" columns={2} />
         </div>
       )}
 
       {/* Tabs */}
       <div
-        className={`sticky top-[70px] md:top-[75px] z-30 bg-white dark:bg-transparent border-b border-gray-200 dark:border-white/10 ${libraryTopAds.length === 0 ? "" : "mt-8"}`}
+        className={`sticky top-[70px] md:top-[75px] z-30 bg-white dark:bg-transparent border-b border-gray-200 dark:border-white/10 ${libraryTopAds.length === 0 ? "" : "mt-2"}`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-2 py-2">
+          <div className="grid grid-cols-3 gap-2 py-2 max-w-xl mx-auto">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTabId === tab.id;
@@ -301,7 +349,7 @@ const Library = () => {
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all duration-200 md:text-sm ${
+                  className={`flex items-center justify-center gap-1 rounded-xl border px-2.5 py-2.5 text-[11px] font-semibold transition-all duration-200 md:gap-2 md:px-3 md:text-sm ${
                     isActive ? contentFilterActive : contentFilterInactive
                   }`}
                 >
@@ -315,7 +363,7 @@ const Library = () => {
       </div>
 
       {/* Main Content */}
-      <main className="pt-12 pb-24">
+      <main className="pt-4 pb-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Bookmark Tab */}
           {activeTabId === "bookmark" && (
@@ -360,7 +408,7 @@ const Library = () => {
                   </div>
                   {bookmarkLoading ? (
                     <div className="text-center py-12 bg-gray-100 dark:bg-white/[0.04] dark:border dark:border-white/10 rounded-lg">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto"></div>
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-400 mx-auto"></div>
                       <p className="text-gray-500 dark:text-gray-400 mt-4">
                         Memuat bookmark...
                       </p>
@@ -494,7 +542,7 @@ const Library = () => {
                   </button>
                   {readlistDetailLoading || !readlistDetail ? (
                     <div className="text-center py-12 bg-gray-100 dark:bg-white/[0.04] dark:border dark:border-white/10 rounded-lg">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto" />
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-400 mx-auto" />
                       <p className="text-gray-500 dark:text-gray-400 mt-4">Memuat readlist...</p>
                     </div>
                   ) : (
@@ -647,7 +695,7 @@ const Library = () => {
                   </div>
                   {readlistsLoading ? (
                     <div className="text-center py-12 bg-gray-100 dark:bg-white/[0.04] dark:border dark:border-white/10 rounded-lg">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto" />
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-400 mx-auto" />
                       <p className="text-gray-500 dark:text-gray-400 mt-4">Memuat readlist...</p>
                     </div>
                   ) : readlists.length === 0 ? (
@@ -790,17 +838,17 @@ const Library = () => {
                             {item.mangaTitle}
                           </h3>
                           {item.chapterSlug ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(`/view/${item.chapterSlug}`);
+                            <ChapterAccessLink
+                              chapter={{
+                                slug: item.chapterSlug,
+                                created_at: item.chapterCreatedAt,
                               }}
-                              className={`mb-1 ${linkChipBtnClass}`}
-                            >
-                              Lanjut baca: Chapter{" "}
-                              {item.chapterNumber || item.chapterTitle || "terakhir"}
-                            </button>
+                              to={`/view/${item.chapterSlug}`}
+                              onClick={(e) => e.stopPropagation()}
+                              compact
+                              className="mb-1"
+                              label={`Chapter ${item.chapterNumber || item.chapterTitle || "terakhir"}`}
+                            />
                           ) : null}
                           <p className="text-xs text-gray-500 dark:text-gray-500">
                             {getTimeAgo(Math.floor(item.timestamp / 1000))}
@@ -841,6 +889,81 @@ const Library = () => {
                       </button>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Popular Tab */}
+          {activeTabId === "popular" && (
+            <div>
+              <div className="mb-4">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                  Populer
+                </h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Top 50 komik populer per kategori
+                </p>
+              </div>
+
+              <div className="mb-5 flex flex-wrap gap-2">
+                {VALID_POPULAR_TYPES.map((type) => {
+                  const isActive = activePopularType === type;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setPopularType(type)}
+                      className={`px-4 py-2 text-sm font-semibold capitalize ${
+                        isActive ? contentFilterActive : contentFilterInactive
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {popularMangaLoading ? (
+                <div className="text-center py-12 bg-gray-100 dark:bg-white/[0.04] dark:border dark:border-white/10 rounded-lg">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-400 mx-auto"></div>
+                  <p className="text-gray-500 dark:text-gray-400 mt-4">
+                    Memuat manga populer...
+                  </p>
+                </div>
+              ) : popularMangaList.length === 0 ? (
+                <div className="text-center py-12 bg-gray-100 dark:bg-white/[0.04] dark:border dark:border-white/10 rounded-lg">
+                  <Flame className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-500 dark:text-gray-400 text-lg font-medium mb-2">
+                    Belum ada data populer
+                  </p>
+                  <p className="text-gray-400 dark:text-gray-500 text-sm">
+                    Coba ganti kategori Manga/Manhwa/Manhua
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {popularMangaList.map((item) => (
+                    <div
+                      key={item.id}
+                      className="bg-white dark:bg-white/[0.06] dark:border dark:border-white/10 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer"
+                      onClick={() => navigate(`/komik/${item.slug}`)}
+                    >
+                      <div className="relative aspect-[3/4] overflow-hidden">
+                        <LazyImage
+                          src={getImageUrl(item.cover)}
+                          alt={item.title}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                          wrapperClassName="w-full h-full"
+                        />
+                      </div>
+                      <div className="p-3">
+                        <h3 className="font-bold text-sm line-clamp-2 text-gray-900 dark:text-gray-100">
+                          {item.title}
+                        </h3>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

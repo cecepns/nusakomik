@@ -1,14 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { useIsMdUp } from "../hooks/useIsMdUp";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronRight, FolderKanban, LayoutGrid, List, Lock } from "lucide-react";
+import { ChevronRight, FolderKanban, LayoutGrid, List } from "lucide-react";
 import LazyImage from "./LazyImage";
 import AdBanner from "./AdBanner";
 import { useAds } from "../hooks/useAds";
 import { apiClient, getImageUrl } from "../utils/api";
 import { getChapterTimeAgo } from "../utils/chapterTime";
-import { useChapterLoginGate } from "../hooks/useChapterLoginGate";
-import LoginPopup from "./LoginPopup";
+import ChapterAccessLink from "./ChapterAccessLink";
 
 const contentBtnTrans = "transition-all duration-200";
 const contentFilterInactive = `rounded-xl border ${contentBtnTrans} border-slate-200 bg-slate-50 text-slate-700 shadow-[0_3px_0_0_#e2e8f0] hover:-translate-y-0.5 hover:shadow-[0_4px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-primary-600 dark:bg-primary-800 dark:text-gray-200 dark:shadow-[0_3px_0_0_#1e3a5f] dark:hover:bg-primary-800`;
@@ -23,7 +22,6 @@ const ProjectSection = () => {
   const [loading, setLoading] = useState(true);
   const [cardLayout, setCardLayout] = useState("vertical");
   const isMdUp = useIsMdUp();
-  const { isChapterLocked, guardChapterClick, loginPopupProps } = useChapterLoginGate();
 
   const visibleManga = useMemo(
     () => (isMdUp ? mangaList : mangaList.slice(0, MOBILE_HOME_SECTION_CAP)),
@@ -40,7 +38,8 @@ const ProjectSection = () => {
           orderBy: "Update",
           project: "true",
         });
-        const mangaData = response.data || [];
+        const mangaData =
+          response?.status === false ? [] : response?.data || [];
         const transformed = mangaData.map((manga) => ({
           id: manga.id,
           title: manga.title,
@@ -78,191 +77,164 @@ const ProjectSection = () => {
   return (
     <>
       {projectTopBanner}
-    <div className="mb-12">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center space-x-3">
-          <div className="bg-gradient-to-r from-violet-500 to-fuchsia-500 p-2 rounded-lg">
-            <FolderKanban className="h-6 w-6 text-white" />
+      <div className="mb-12">
+        {/* Title Bar with Blue Gradient Background */}
+        <div className="w-full bg-gradient-to-r from-sky-400 to-blue-600 text-white rounded-xl px-4 py-3 mb-6 flex items-center justify-between shadow-lg shadow-sky-500/20">
+          <div className="flex items-center gap-3">
+            <FolderKanban className="h-5 w-5 sm:h-6 sm:w-6 text-white shrink-0" />
+            <h2 className="text-base sm:text-lg font-bold tracking-wide uppercase text-white">
+              PROJEK
+            </h2>
           </div>
-          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">
-            Project
-          </h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              setCardLayout((prev) =>
-                prev === "vertical" ? "horizontal" : "vertical",
-              )
-            }
-            className={`inline-flex h-10 w-10 shrink-0 items-center justify-center ${contentFilterInactive}`}
-            title={
-              cardLayout === "vertical"
-                ? "Tampilan baris (horizontal)"
-                : "Tampilan grid (vertical)"
-            }
-            aria-label={
-              cardLayout === "vertical"
-                ? "Ubah ke tampilan baris"
-                : "Ubah ke tampilan grid"
-            }
-          >
-            {cardLayout === "vertical" ? (
-              <List className="h-5 w-5" aria-hidden />
-            ) : (
-              <LayoutGrid className="h-5 w-5" aria-hidden />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate("/content?project=true")}
-            className={`group inline-flex items-center gap-1.5 ${contentCtaClearAll}`}
-          >
-            Lihat semua
-            <ChevronRight
-              className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5"
-              aria-hidden
-            />
-          </button>
-        </div>
-      </div>
-
-      <div
-        className={
-          cardLayout === "vertical"
-            ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 gap-4"
-            : "flex flex-col gap-3"
-        }
-      >
-        {visibleManga.map((manga) => (
-          <div
-            key={manga.id}
-            onClick={() => navigate(`/komik/${manga.slug}`)}
-            className={`bg-white dark:bg-primary-900 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer ${
-              cardLayout === "horizontal"
-                ? "flex flex-row gap-3 p-3 sm:gap-4 sm:p-4"
-                : "flex flex-col"
-            }`}
-          >
-            <div
-              className={
-                cardLayout === "vertical"
-                  ? "relative aspect-[3/4] overflow-hidden"
-                  : "relative aspect-[3/4] w-[5.5rem] shrink-0 overflow-hidden rounded-md sm:w-28"
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setCardLayout((prev) =>
+                  prev === "vertical" ? "horizontal" : "vertical",
+                )
               }
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-black/20 text-white transition-colors hover:bg-black/40"
+              title={
+                cardLayout === "vertical"
+                  ? "Tampilan baris (horizontal)"
+                  : "Tampilan grid (vertical)"
+              }
+              aria-label="Ubah mode tampilan"
             >
-              <LazyImage
-                src={getImageUrl(manga.cover)}
-                alt={manga.title}
-                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                wrapperClassName="w-full h-full"
-              />
-              {manga.rating > 0 && (
+              {cardLayout === "vertical" ? (
+                <List className="h-4 w-4" aria-hidden />
+              ) : (
+                <LayoutGrid className="h-4 w-4" aria-hidden />
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div
+          className={
+            cardLayout === "vertical"
+              ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 gap-4"
+              : "flex flex-col gap-3"
+          }
+        >
+          {visibleManga.map((manga) => (
+            <div
+              key={manga.id}
+              onClick={() => navigate(`/komik/${manga.slug}`)}
+              className={`bg-white dark:bg-white/[0.06] dark:border dark:border-white/10 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer ${cardLayout === "horizontal"
+                  ? "flex flex-row gap-3 p-3 sm:gap-4 sm:p-4"
+                  : "flex flex-col"
+                }`}
+            >
+              <div
+                className={
+                  cardLayout === "vertical"
+                    ? "relative aspect-[3/4] overflow-hidden"
+                    : "relative aspect-[3/4] w-[5.5rem] shrink-0 overflow-hidden rounded-md sm:w-28"
+                }
+              >
+                <LazyImage
+                  src={getImageUrl(manga.cover)}
+                  alt={manga.title}
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                  wrapperClassName="w-full h-full"
+                />
+                {/* {manga.rating > 0 && (
                 <div className="absolute top-2 left-2 h-8 w-8 rounded-full bg-yellow-500/95 text-white shadow-lg backdrop-blur-sm flex items-center justify-center">
                   <span className="text-[11px] font-bold leading-none">
                     {Number(manga.rating).toFixed(1)}
                   </span>
                 </div>
-              )}
-            </div>
+              )} */}
+              </div>
 
-            <div
-              className={
-                cardLayout === "vertical"
-                  ? "p-3 flex flex-col h-[192px]"
-                  : "flex min-w-0 flex-1 flex-col justify-between gap-2 py-0.5"
-              }
-            >
-              {!!manga.hot && (
-                <div
-                  className={`max-w-fit rounded-full bg-red-500/90 px-2 py-1 backdrop-blur-sm ${
-                    cardLayout === "vertical" ? "mb-1" : "mb-0"
-                  }`}
-                >
-                  <span className="text-xs font-bold text-white">HOT</span>
-                </div>
-              )}
               <div
                 className={
                   cardLayout === "vertical"
-                    ? "min-h-[2.75rem] md:min-h-[3rem] mb-2 flex items-center"
-                    : "mb-0 flex items-start"
+                    ? "p-3 flex flex-col h-[192px]"
+                    : "flex min-w-0 flex-1 flex-col justify-between gap-2 py-0.5"
                 }
               >
-                <Link
-                  to={`/komik/${manga.slug}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="block w-full"
-                >
-                  <h3
-                    className={`font-bold line-clamp-2 text-gray-900 transition-colors hover:text-blue-600 dark:text-gray-100 dark:hover:text-blue-400 ${
-                      cardLayout === "vertical" ? "text-sm" : "text-sm sm:text-base"
-                    }`}
+                {!!manga.hot && (
+                  <div
+                    className={`max-w-fit rounded-full bg-red-500/90 px-2 py-1 backdrop-blur-sm ${cardLayout === "vertical" ? "mb-1" : "mb-0"
+                      }`}
                   >
-                    {manga.title}
-                  </h3>
-                </Link>
-              </div>
-
-              {manga.lastChapters?.length > 0 ? (
+                    <span className="text-xs font-bold text-white">HOT</span>
+                  </div>
+                )}
                 <div
                   className={
                     cardLayout === "vertical"
-                      ? "mb-1 mt-auto space-y-2"
-                      : "flex flex-col gap-1.5 sm:gap-2"
+                      ? "min-h-[2.75rem] md:min-h-[3rem] mb-2 flex items-center"
+                      : "mb-0 flex items-start"
                   }
                 >
-                  {manga.lastChapters.slice(0, 3).map((chapter) => {
-                    const locked = isChapterLocked(chapter, manga.lastChapters);
-                    return (
-                    <Link
-                      key={chapter.slug}
-                      to={`/view/${chapter.slug}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        guardChapterClick(e, chapter, manga.lastChapters);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-lg border-l-2 bg-gray-100 text-left text-gray-700 transition-colors hover:bg-gray-200 dark:bg-primary-800/70 dark:text-gray-300 dark:hover:bg-primary-700 ${
-                        locked
-                          ? "border-amber-500 ring-1 ring-amber-500/25"
-                          : "border-violet-500"
-                      } ${
-                        cardLayout === "vertical"
-                          ? "px-2.5 py-2 text-xs"
-                          : "px-2 py-1.5 text-[11px] sm:px-2.5 sm:py-2 sm:text-xs"
-                      }`}
+                  <Link
+                    to={`/komik/${manga.slug}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="block w-full"
+                  >
+                    <h3
+                      className={`font-bold line-clamp-2 text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${cardLayout === "vertical" ? "text-xs md:text-sm" : "text-sm sm:text-base"
+                        }`}
                     >
-                      <span className="font-semibold inline-flex items-center gap-1">
-                        Chapter {chapter.number || "N/A"}
-                        {locked && (
-                          <Lock className="h-3 w-3 shrink-0 text-amber-500" aria-hidden />
-                        )}
-                      </span>
-                      {getChapterTimeAgo(chapter) && (
-                        <span className="text-[11px] md:text-xs text-gray-500 dark:text-gray-400">
-                          {getChapterTimeAgo(chapter)}
-                        </span>
-                      )}
-                    </Link>
-                  );
-                  })}
+                      {manga.title}
+                    </h3>
+                  </Link>
                 </div>
-              ) : (
-                <div
-                  className={`text-xs text-gray-500 dark:text-gray-500 ${
-                    cardLayout === "vertical" ? "mb-1 mt-auto" : ""
-                  }`}
-                >
-                  Chapter N/A
-                </div>
-              )}
+
+                {manga.lastChapters?.length > 0 ? (
+                  <div
+                    className={
+                      cardLayout === "vertical"
+                        ? "mb-1 mt-auto space-y-2"
+                        : "flex flex-col gap-1.5 sm:gap-2"
+                    }
+                  >
+                    {manga.lastChapters.slice(0, 3).map((chapter, chapterIndex) => (
+                      <ChapterAccessLink
+                        key={chapter.slug}
+                        chapter={chapter}
+                        to={`/view/${chapter.slug}`}
+                        onClick={(e) => e.stopPropagation()}
+                        accent="red"
+                        className={
+                          cardLayout === "vertical"
+                            ? "text-xs"
+                            : "px-2 py-1.5 text-[11px] sm:px-2.5 sm:py-2 sm:text-xs"
+                        }
+                        label={`Chapter ${chapter.number || "N/A"}`}
+                        meta={getChapterTimeAgo(chapter) || null}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    className={`text-xs text-gray-500 ${cardLayout === "vertical" ? "mb-1 mt-auto" : ""
+                      }`}
+                  >
+                    Chapter N/A
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+
+        {/* Button "Lihat Semuanya" at bottom of ProjectSection */}
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            onClick={() => navigate("/content?project=true")}
+            className="group inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-sky-400 to-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-md shadow-sky-500/20 hover:from-sky-500 hover:to-blue-700 hover:scale-105 active:scale-95 transition-all"
+          >
+            Lihat semua
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
+          </button>
+        </div>
       </div>
-    </div>
-    <LoginPopup {...loginPopupProps} />
     </>
   );
 };

@@ -1,20 +1,23 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import {
-  ChevronLeft,
-  ChevronRight,
-  ArrowRight,
   X,
   Share2,
   ExternalLink,
   Copy,
   Smartphone,
   Heart,
+  Crown,
+  ChevronRight,
 } from "lucide-react";
 import ProjectSection from "../components/ProjectSection";
 import UpdateSection from "../components/UpdateSection";
 import PopularSection from "../components/PopularSection";
-import { Link } from "react-router-dom";
+import ComicTypeSection from "../components/ComicTypeSection";
+import HeroBannerSection from "../components/HeroBannerSection";
+import FeaturedBanner from "../components/FeaturedBanner";
+import "../styles/featured-banner.css";
+import { Link, useNavigate } from "react-router-dom";
 import {
   WhatsappShareButton,
   TelegramShareButton,
@@ -28,19 +31,15 @@ import AOS from "aos";
 import "aos/dist/aos.css";
 import AdBanner from "../components/AdBanner";
 import { useAds } from "../hooks/useAds";
-import { apiClient, getImageUrl } from "../utils/api";
+import { apiClient, setCdnDomain } from "../utils/api";
 import discordIcon from "../assets/discord.svg";
-
-const BANNER_DOTS_MAX = 8;
-
-function synopsisPlain(html) {
-  if (!html || typeof html !== "string") return "";
-  const text = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-  return text;
-}
+import LiveChatWidget from "../components/LiveChatWidget";
+import LoginModal from "../components/LoginModal";
+import { useChapterAccess } from "../hooks/useChapterAccess";
 
 const Home = () => {
-  const [currentSlide, setCurrentSlide] = useState(0);
+  const navigate = useNavigate();
+  const { loginOpen, openChapter, handleLoginSuccess, closeLogin } = useChapterAccess();
   const [bannerManga, setBannerManga] = useState([]);
   const [bannerLoading, setBannerLoading] = useState(true);
   const [popupBannerVisible, setPopupBannerVisible] = useState(false);
@@ -48,11 +47,44 @@ const Home = () => {
   const [popupSettingsReady, setPopupSettingsReady] = useState(false);
   const [sharePopupOpen, setSharePopupOpen] = useState(false);
   const [installModalOpen, setInstallModalOpen] = useState(false);
-  const shareUrl = typeof window !== "undefined" ? window.location.origin : "https://id.nusakomik.com";
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+  const shareUrl = typeof window !== "undefined" ? window.location.origin : "https://komiknesia.com";
   const shareTitle =
-    "Baca komik, manga, manhwa & manhua bahasa Indonesia di NusaKomik — update setiap hari!";
-  const discordInviteUrl = "https://discord.gg/3tGVDZCF3a";
-  const donateUrl = "https://saweria.co/NusaKomik";
+    "Baca komik, manga, manhwa, dan manhua Bahasa Indonesia di KomikNesia!";
+  const discordInviteUrl = "https://discord.gg/dgC22PSm9h";
+  const donateUrl = "https://saweria.co/KomikNesia";
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const [pwaGuideOpen, setPwaGuideOpen] = useState(false);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      try {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === "accepted") {
+          toast.success("Terima kasih telah memasang aplikasi KomikNesia!");
+          setDeferredPrompt(null);
+          return;
+        }
+      } catch (err) {
+        console.error("Error triggering PWA prompt:", err);
+      }
+    }
+    // Tampilkan modal petunjuk visual instalasi jika native browser prompt tidak aktif
+    setPwaGuideOpen(true);
+  };
 
   const copyShareLink = async (context = "default") => {
     try {
@@ -67,17 +99,11 @@ const Home = () => {
     }
   };
 
+  const [heroBanners, setHeroBanners] = useState([]);
+
   useEffect(() => {
     fetchBannerManga();
   }, []);
-
-  useEffect(() => {
-    setCurrentSlide((prev) => {
-      const n = bannerManga.length;
-      if (n === 0) return 0;
-      return prev < n ? prev : n - 1;
-    });
-  }, [bannerManga.length]);
 
   const fetchBannerManga = async () => {
     try {
@@ -91,24 +117,113 @@ const Home = () => {
     }
   };
 
+  useEffect(() => {
+    apiClient.getSettings().then((s) => {
+      if (s && Array.isArray(s.hero_banners) && s.hero_banners.length > 0) {
+        setHeroBanners(s.hero_banners);
+      }
+    }).catch(() => {});
+  }, []);
+
   // Fetch ads by type
   const { ads: homeTopAds } = useAds("home-top");
   const { ads: populerAds } = useAds("populer");
   const { ads: homeFooterAds } = useAds("home-footer");
   const { ads: homePopupAds } = useAds("home-popup");
+  const { ads: homeManhwaAds } = useAds("home-manhwa-top");
+  const { ads: homeMangaAds } = useAds("home-manga-top");
+  const { ads: homeManhuaAds } = useAds("home-manhua-top");
+
+  const [quickLinks, setQuickLinks] = useState([
+    { id: 'discord', title: 'Discord', href: 'https://discord.gg/dgC22PSm9h', icon: 'Discord', is_active: true },
+    { id: 'facebook', title: 'Facebook', href: 'https://facebook.com', icon: 'Facebook', is_active: true },
+    { id: 'instagram', title: 'Instagram', href: 'https://instagram.com', icon: 'Instagram', is_active: true },
+    { id: 'download_app', title: 'Download App', href: 'https://02.komiknesia.asia/', icon: 'Download', is_active: true }
+  ]);
 
   useEffect(() => {
     apiClient
       .getSettings()
       .then((s) => {
-        const v = s.home_popup_interval_minutes;
+        if (s && s.cdn_domain) {
+          setCdnDomain(s.cdn_domain);
+        }
+        const v = s?.home_popup_interval_minutes;
         if (Number.isFinite(v) && [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].includes(v)) {
           setHomePopupIntervalMinutes(v);
+        }
+        if (s && Array.isArray(s.quick_links) && s.quick_links.length > 0) {
+          const webAppLinks = s.quick_links.filter(item => item.is_active !== false && item.is_web_app !== false);
+          if (webAppLinks.length > 0) setQuickLinks(webAppLinks);
         }
       })
       .catch(() => {})
       .finally(() => setPopupSettingsReady(true));
   }, []);
+
+  const renderHomeIcon = (iconName) => {
+    if (iconName === 'Discord') {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5865F2]">
+          <img src={discordIcon} alt="" className="h-3.5 w-3.5" aria-hidden />
+        </div>
+      );
+    }
+    if (iconName === 'Facebook') {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#1877F2] text-white">
+          <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+          </svg>
+        </div>
+      );
+    }
+    if (iconName === 'TikTok') {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-black text-white border border-gray-700">
+          <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 3 15.68 6.34 6.34 0 0 0 9.33 22a6.34 6.34 0 0 0 6.34-6.34V9.37a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-.85-.8z"/>
+          </svg>
+        </div>
+      );
+    }
+    if (iconName === 'Instagram') {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white">
+          <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+          </svg>
+        </div>
+      );
+    }
+    if (iconName === 'Crown') {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-white">
+          <Crown className="h-3.5 w-3.5" />
+        </div>
+      );
+    }
+    if (iconName === 'Download' || iconName === 'Smartphone') {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
+          <Smartphone className="h-3.5 w-3.5" />
+        </div>
+      );
+    }
+    if (iconName === 'Heart') {
+      return (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-500 text-white">
+          <Heart className="h-3.5 w-3.5" />
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-600 text-white">
+        <ExternalLink className="h-3.5 w-3.5" />
+      </div>
+    );
+  };
 
   useEffect(() => {
     AOS.init({
@@ -142,60 +257,12 @@ const Home = () => {
     }
   }, [popupSettingsReady, homePopupIntervalMinutes]);
 
-  useEffect(() => {
-    if (bannerManga.length > 0) {
-      const timer = setInterval(() => {
-        setCurrentSlide((prev) => (prev + 1) % bannerManga.length);
-      }, 5000); // Auto-slide every 5 seconds
-
-      return () => clearInterval(timer);
+  const handleReadLatest = (latest, mangaSlug) => {
+    if (latest?.slug) {
+      openChapter(navigate, latest, true);
+      return;
     }
-  }, [bannerManga.length]);
-
-  const nextSlide = () => {
-    setCurrentSlide((prev) => (prev + 1) % bannerManga.length);
-  };
-
-  const prevSlide = () => {
-    setCurrentSlide(
-      (prev) => (prev - 1 + bannerManga.length) % bannerManga.length
-    );
-  };
-
-  const goToSlide = (index) => {
-    setCurrentSlide(index);
-  };
-
-  const bannerDotIndices = useMemo(() => {
-    const n = bannerManga.length;
-    if (n === 0) return [];
-    if (n <= BANNER_DOTS_MAX) {
-      return Array.from({ length: n }, (_, i) => i);
-    }
-    const start = Math.min(
-      Math.max(0, currentSlide - Math.floor(BANNER_DOTS_MAX / 2)),
-      n - BANNER_DOTS_MAX,
-    );
-    return Array.from({ length: BANNER_DOTS_MAX }, (_, i) => start + i);
-  }, [bannerManga.length, currentSlide]);
-
-  /** Swipe horizontal di mobile — slide non-aktif pakai pointer-events-none agar tidak menutupi area sentuh */
-  const bannerTouchRef = useRef(null);
-  const onBannerTouchStart = (e) => {
-    if (bannerManga.length < 2) return;
-    const t = e.touches[0];
-    bannerTouchRef.current = { x: t.clientX, y: t.clientY };
-  };
-  const onBannerTouchEnd = (e) => {
-    if (!bannerTouchRef.current || bannerManga.length < 2) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - bannerTouchRef.current.x;
-    const dy = t.clientY - bannerTouchRef.current.y;
-    bannerTouchRef.current = null;
-    const minSwipe = 52;
-    if (Math.abs(dx) < minSwipe || Math.abs(dx) < Math.abs(dy) * 0.85) return;
-    if (dx < 0) nextSlide();
-    else prevSlide();
+    if (mangaSlug) navigate(`/komik/${mangaSlug}`);
   };
 
   const handleClosePopupBanner = () => {
@@ -214,7 +281,7 @@ const Home = () => {
   return (
     <div className="pt-5 md:pt-20 pb-4">
       <Helmet>
-        <title>Nusakomik | Baca Komik, Manga, Manhwa, dan Manhua Bahasa Indonesia</title>
+        <title>KomikNesia | Baca Komik, Manga, Manhwa, dan Manhua Bahasa Indonesia</title>
         <meta name="description" content="Baca komik, manga, manhwa, dan manhua bahasa Indonesia gratis di KomikNesia. Update terbaru, kualitas terbaik, dan mudah dibaca di semua perangkat." />
       </Helmet>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
@@ -257,294 +324,74 @@ const Home = () => {
    
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Featured Slider - Popular Daily */}
+        {/* Hero Slider Banner */}
         <div
-          className="mb-12 relative"
+          className="mb-12"
           data-aos="fade-up"
           data-aos-delay="100"
         >
-          <div
-            className="relative h-[500px] md:h-[500px] rounded-2xl overflow-hidden touch-pan-y"
-            onTouchStart={onBannerTouchStart}
-            onTouchEnd={onBannerTouchEnd}
-          >
-            {bannerLoading ? (
-              <div className="absolute inset-0 bg-gray-100 dark:bg-gray-800 animate-pulse">
-                <div className="h-full w-full bg-gray-300 dark:bg-gray-700 md:hidden" />
-                <div className="hidden h-full w-full md:flex md:flex-row">
-                  <div className="w-full md:w-1/2 h-full p-8 flex flex-col justify-end md:justify-center space-y-4">
-                    <div className="h-8 md:h-12 w-3/4 bg-gray-300 dark:bg-gray-700 rounded"></div>
-                    <div className="flex gap-3">
-                      <div className="h-6 w-24 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
-                      <div className="h-6 w-20 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="h-4 w-full bg-gray-300 dark:bg-gray-700 rounded"></div>
-                      <div className="h-4 w-5/6 bg-gray-300 dark:bg-gray-700 rounded"></div>
-                    </div>
-                    <div className="hidden md:block h-10 w-40 bg-gray-300 dark:bg-gray-700 rounded-lg mt-2"></div>
-                  </div>
-                  <div className="hidden md:block w-1/2 h-full p-8">
-                    <div className="h-full w-64 max-w-full mx-auto bg-gray-300 dark:bg-gray-700 rounded-2xl"></div>
-                  </div>
-                </div>
-              </div>
-            ) : bannerManga.length === 0 ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
-                <p className="text-gray-500 dark:text-gray-400">
-                  Tidak ada banner tersedia
-                </p>
-              </div>
-            ) : (
-              bannerManga.map((item, index) => {
-                const latest = item.lastChapters?.[0];
-                const readHref = latest?.slug
-                  ? `/view/${latest.slug}`
-                  : `/komik/${item.slug}`;
-                const synopsis = synopsisPlain(item.synopsis);
-                const genres = Array.isArray(item.genres) ? item.genres : [];
-
-                return (
-              <div
-                key={item.id || index}
-                className={`absolute inset-0 transition-all duration-700 ease-in-out ${
-                  index === currentSlide
-                    ? "z-[2] opacity-100 translate-x-0 pointer-events-auto"
-                    : "z-0 opacity-0 translate-x-full pointer-events-none"
-                }`}
-              >
-                {/* Mobile: gambar full height + judul & CTA overlay (tanpa panel hitam bawah) */}
-                <div className="absolute inset-0 md:hidden">
-                  <img
-                    src={getImageUrl(item.cover)}
-                    alt={item.title}
-                    className="absolute inset-0 h-full w-full object-cover"
-                  />
-                  <div
-                    className="absolute -bottom-24 inset-0 bg-gradient-to-t from-black via-black/10 to-transparent"
-                    aria-hidden
-                  />
-                  <div className="relative z-[1] flex h-full flex-col justify-end px-4 pb-6 pt-20 text-center">
-                    <Link to={`/komik/${item.slug}`}>
-                      <h2 className="text-lg font-bold leading-snug text-white drop-shadow-md line-clamp-2 transition-colors hover:text-amber-100">
-                        {item.title}
-                      </h2>
-                    </Link>
-                    <div className="mt-3 flex justify-center pb-1">
-                      <Link
-                        to={readHref}
-                        className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-6 py-3 text-sm font-bold text-gray-900 shadow-md transition-colors hover:bg-amber-300"
-                      >
-                        Mulai Baca
-                        <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Desktop: blurred cover + dark overlay */}
-                <div className="hidden md:block absolute inset-0 overflow-hidden">
-                  <img
-                    src={getImageUrl(item.cover)}
-                    alt=""
-                    className="absolute inset-0 h-full w-full scale-110 object-cover blur-3xl"
-                    aria-hidden
-                  />
-                  <div className="absolute inset-0 bg-black/75" />
-                  <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/55 to-transparent" />
-                </div>
-
-                {/* Desktop: judul, sinopsis, genre, CTA + cover */}
-                <div className="relative hidden h-full md:flex md:items-center">
-                  <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 md:pb-0">
-                    <div className="grid items-center gap-8 md:grid-cols-2 md:gap-12 lg:gap-16">
-                      <div className="z-[1] space-y-4 text-center text-white md:space-y-6 md:text-left">
-                        {latest?.number != null && (
-                          <p className="text-sm font-bold uppercase tracking-wide text-white/90 md:text-base">
-                            Chapter: {latest.number}
-                          </p>
-                        )}
-                        <Link to={`/komik/${item.slug}`}>
-                          <h2 className="text-2xl font-bold leading-tight line-clamp-2 cursor-pointer transition-colors hover:text-white/90 md:text-4xl lg:text-5xl">
-                            {item.title}
-                          </h2>
-                        </Link>
-
-                        {synopsis ? (
-                          <p className="mx-auto max-w-xl text-sm leading-relaxed text-white/85 line-clamp-3 md:mx-0 md:text-base md:line-clamp-4">
-                            {synopsis}
-                          </p>
-                        ) : (
-                          <p className="mx-auto max-w-xl text-sm text-white/70 md:mx-0 md:text-base">
-                            {item.author ? `Oleh ${item.author}` : "\u00a0"}
-                          </p>
-                        )}
-
-                        {genres.length > 0 && (
-                          <div className="flex flex-wrap justify-center gap-2 md:justify-start">
-                            {genres.slice(0, 8).map((g) => (
-                              <span
-                                key={g.id ?? g.slug ?? g.name}
-                                className="rounded-full border border-white/50 bg-white/5 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm md:text-sm"
-                              >
-                                {g.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="flex flex-wrap items-center justify-center gap-4 pt-1 md:justify-start">
-                          <Link
-                            to={readHref}
-                            className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-8 py-3.5 text-base font-bold text-gray-900 shadow-lg transition-all hover:bg-amber-300 hover:shadow-xl"
-                          >
-                            Mulai Baca
-                            <ArrowRight className="h-5 w-5 shrink-0" aria-hidden />
-                          </Link>
-                          {item.total_views != null && (
-                            <span className="text-sm text-white/70">
-                              <span className="font-semibold text-white/90">
-                                {Number(item.total_views).toLocaleString()}
-                              </span>{" "}
-                              tayangan
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="relative z-[1] flex justify-center lg:justify-end">
-                        <Link
-                          to={`/komik/${item.slug}`}
-                          className="group relative block"
-                          aria-label={item.title}
-                        >
-                          <div className="absolute -inset-3 rounded-3xl bg-white/10 blur-2xl transition-opacity group-hover:opacity-90" />
-                          <img
-                            src={getImageUrl(item.cover)}
-                            alt={item.title}
-                            className="relative h-[22rem] w-[14rem] rounded-xl object-cover shadow-2xl ring-1 ring-white/10 transition-transform duration-300 sm:h-[24rem] sm:w-[15rem] md:h-[26rem] md:w-64 md:-rotate-[4deg] md:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] group-hover:md:-rotate-[2deg]"
-                          />
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-                );
-              })
-            )}
-
-            {/* Navigation Arrows - Hidden on Mobile */}
-            <button
-              onClick={prevSlide}
-              className="hidden md:flex absolute left-4 top-1/2 z-20 -translate-y-1/2 bg-black/30 hover:bg-black/50 backdrop-blur-sm text-white p-3 rounded-full transition-all"
-              aria-label="Previous slide"
-            >
-              <ChevronLeft className="h-6 w-6" />
-            </button>
-
-            <button
-              onClick={nextSlide}
-              className="hidden md:flex absolute right-4 top-1/2 z-20 -translate-y-1/2 bg-black/30 hover:bg-black/50 backdrop-blur-sm text-white p-3 rounded-full transition-all"
-              aria-label="Next slide"
-            >
-              <ChevronRight className="h-6 w-6" />
-            </button>
-          </div>
-
-          {/* Dots di luar kartu banner (bawah rounded) — tidak menimpa judul/CTA */}
-          {!bannerLoading && bannerManga.length > 1 && (
-            <div
-              className="mt-4 flex justify-center gap-2.5"
-              role="tablist"
-              aria-label="Pilih slide banner"
-            >
-              {bannerDotIndices.map((slideIdx) => (
-                <button
-                  key={slideIdx}
-                  type="button"
-                  onClick={() => goToSlide(slideIdx)}
-                  className={`transition-all rounded-full ${
-                    slideIdx === currentSlide
-                      ? "h-3 w-8 bg-sky-600 dark:bg-white"
-                      : "h-3 w-3 bg-slate-400/90 hover:bg-slate-500 dark:bg-white/45 dark:hover:bg-white/70"
-                  }`}
-                  aria-label={`Ke slide ${slideIdx + 1}`}
-                  aria-current={slideIdx === currentSlide ? "true" : undefined}
-                />
-              ))}
-            </div>
-          )}
+          <HeroBannerSection banners={heroBanners && heroBanners.length > 0 ? heroBanners : bannerManga} />
         </div>
 
+        {/* Simple Link Badges Section per Client Feedback */}
         <div
-          className="mx-auto mb-8 grid max-w-4xl grid-cols-1 gap-3 md:grid-cols-2 md:gap-4"
+          className="mx-auto mb-8 grid grid-cols-2 gap-2 max-w-3xl sm:grid-cols-3 md:flex md:flex-wrap md:items-center md:justify-center md:gap-3"
           data-aos="fade-up"
           data-aos-delay="120"
         >
-          <button
-            type="button"
-            onClick={() => setSharePopupOpen(true)}
-            className="group flex w-full items-center gap-4 rounded-2xl border border-slate-700/90 bg-[#111827] p-4 text-left shadow-md transition-all hover:border-slate-600 hover:bg-slate-800/95 md:p-5"
-          >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-inner md:h-14 md:w-14">
-              <Share2 className="h-6 w-6 md:h-7 md:w-7" aria-hidden />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-base font-semibold text-white md:text-lg">Bagikan NusaKomik</p>
-              <p className="text-sm text-slate-400">
-                Salin tautan, WhatsApp, X, TikTok, Telegram
-              </p>
-            </div>
-            <ChevronRight className="h-5 w-5 shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-300" aria-hidden />
-          </button>
+          {quickLinks.map((item) => {
+            const isDownloadApp = item.id === 'download_app' || item.icon === 'Download' || item.icon === 'Smartphone' || item.title.toLowerCase().includes('download');
 
-          <a
-            href={discordInviteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group flex w-full items-center gap-4 rounded-2xl border border-slate-700/90 bg-[#111827] p-4 text-left shadow-md transition-all hover:border-slate-600 hover:bg-slate-800/95 md:p-5"
-          >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#5865F2] text-white shadow-inner md:h-14 md:w-14">
-              <img src={discordIcon} alt="" className="h-7 w-7" aria-hidden />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-base font-semibold text-white md:text-lg">Discord</p>
-              <p className="text-sm text-slate-400">Gabung komunitas pembaca</p>
-            </div>
-            <ExternalLink className="h-5 w-5 shrink-0 text-slate-500 group-hover:text-slate-300" aria-hidden />
-          </a>
+            const btnCls = "inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-black/90 backdrop-blur-md px-2 py-1.5 shadow-md transition-all hover:scale-105 hover:border-white/20 hover:bg-white/10 md:px-2.5 md:py-1.5";
+            const txtCls = "text-[11px] font-semibold text-white sm:text-xs truncate";
+            const iconCls = "";
 
-          <a
-            href={donateUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group flex w-full items-center gap-4 rounded-2xl border border-slate-700/90 bg-[#111827] p-4 text-left shadow-md transition-all hover:border-slate-600 hover:bg-slate-800/95 md:p-5"
-          >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-inner md:h-14 md:w-14">
-              <Heart className="h-6 w-6 md:h-7 md:w-7" aria-hidden />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-base font-semibold text-white md:text-lg">Donasi</p>
-              <p className="text-sm text-slate-400">Dukung lewat Saweria</p>
-            </div>
-            <ExternalLink className="h-5 w-5 shrink-0 text-slate-500 group-hover:text-slate-300" aria-hidden />
-          </a>
+            if (isDownloadApp) {
+              return (
+                <button
+                  key={item.id || item.title}
+                  type="button"
+                  onClick={handleInstallClick}
+                  className={`${btnCls} ${iconCls}`}
+                >
+                  {renderHomeIcon(item.icon)}
+                  <span className={txtCls}>
+                    {item.title}
+                  </span>
+                </button>
+              );
+            }
 
-          <button
-            type="button"
-            onClick={() => setInstallModalOpen(true)}
-            className="group flex w-full items-center gap-4 rounded-2xl border border-slate-700/90 bg-[#111827] p-4 text-left shadow-md transition-all hover:border-slate-600 hover:bg-slate-800/95 md:p-5"
-          >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-inner md:h-14 md:w-14">
-              <Smartphone className="h-6 w-6 md:h-7 md:w-7" aria-hidden />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-base font-semibold text-white md:text-lg">Unduh aplikasi</p>
-              <p className="text-sm text-slate-400">Pasang ke layar utama (PWA)</p>
-            </div>
-            <ChevronRight className="h-5 w-5 shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-300" aria-hidden />
-          </button>
+            if (item.is_internal) {
+              return (
+                <Link
+                  key={item.id || item.title}
+                  to={item.href}
+                  className={`${btnCls} ${iconCls}`}
+                >
+                  {renderHomeIcon(item.icon)}
+                  <span className={txtCls}>
+                    {item.title}
+                  </span>
+                </Link>
+              );
+            }
+
+            return (
+              <a
+                key={item.id || item.title}
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${btnCls} ${iconCls}`}
+              >
+                {renderHomeIcon(item.icon)}
+                <span className={txtCls}>
+                  {item.title}
+                </span>
+              </a>
+            );
+          })}
         </div>
 
         {sharePopupOpen && (
@@ -552,11 +399,11 @@ const Home = () => {
             className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
-            aria-label="Bagikan NusaKomik"
+            aria-label="Bagikan KomikNesia"
           >
             <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-slate-900 p-5 text-left shadow-2xl">
               <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-white">Bagikan NusaKomik</h3>
+                <h3 className="text-lg font-semibold text-white">Bagikan KomikNesia</h3>
                 <button
                   type="button"
                   onClick={() => setSharePopupOpen(false)}
@@ -637,19 +484,20 @@ const Home = () => {
           </div>
         )}
 
-        {installModalOpen && (
+        {/* Modal Petunjuk Instal PWA / Tambah ke Layar Utama */}
+        {pwaGuideOpen && (
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
-            aria-label="Cara memasang aplikasi"
+            aria-label="Petunjuk Pasang Aplikasi"
           >
-            <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900 p-5 text-left shadow-2xl">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold text-white">Cara memasang aplikasi</h3>
+            <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-slate-900 p-5 text-left shadow-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white">Pasang Aplikasi KomikNesia</h3>
                 <button
                   type="button"
-                  onClick={() => setInstallModalOpen(false)}
+                  onClick={() => setPwaGuideOpen(false)}
                   className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
                   aria-label="Tutup"
                 >
@@ -657,55 +505,101 @@ const Home = () => {
                 </button>
               </div>
 
-              <p className="mb-4 text-sm leading-relaxed text-slate-300">
-                Ikuti langkah berikut untuk memasang aplikasi web NusaKomik di perangkat kamu (tampilan seperti aplikasi):
+              <p className="mb-4 text-sm text-slate-300">
+                Lakukan langkah sederhana berikut di browser HP kamu untuk memasang KomikNesia ke layar utama:
               </p>
 
-              <ol className="mb-6 list-decimal space-y-3 pl-5 text-sm leading-relaxed text-slate-200">
-                <li>Ketuk ikon menu (titik tiga) di pojok browser.</li>
-                <li>
-                  Pilih <strong className="text-white">Pasang aplikasi</strong> atau{" "}
-                  <strong className="text-white">Tambahkan ke Layar utama</strong> (nama menu bisa sedikit berbeda
-                  tergantung browser).
-                </li>
-                <li>Ikuti petunjuk di layar hingga pemasangan selesai.</li>
-              </ol>
+              <div className="space-y-3 text-xs text-gray-200">
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3.5">
+                  <p className="font-bold text-sky-400 text-sm mb-1.5">Android / Google Chrome:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                    <li>Klik ikon <strong>Titik Tiga (⋮)</strong> di kanan atas browser.</li>
+                    <li>Pilih menu <strong>"Tambahkan ke Layar Utama"</strong> atau <strong>"Install Aplikasi"</strong>.</li>
+                    <li>Tekan <strong>Tambahkan / Install</strong> untuk konfirmasi.</li>
+                  </ol>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3.5">
+                  <p className="font-bold text-amber-400 text-sm mb-1.5">iPhone / Safari iOS:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                    <li>Klik ikon <strong>Bagikan (Share)</strong> di bagian bawah layar Safari.</li>
+                    <li>Gulir ke bawah dan pilih <strong>"Tambah ke Layar Utama" (Add to Home Screen)</strong>.</li>
+                    <li>Tekan <strong>Tambah</strong> di pojok kanan atas.</li>
+                  </ol>
+                </div>
+              </div>
 
               <button
                 type="button"
-                onClick={() => setInstallModalOpen(false)}
-                className="w-full rounded-xl bg-sky-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-sky-500"
+                onClick={() => setPwaGuideOpen(false)}
+                className="mt-5 flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-sky-400 to-blue-600 py-3 text-sm font-bold text-white shadow-md shadow-sky-500/20 transition-all hover:from-sky-500 hover:to-blue-700 active:scale-98"
               >
-                Tutup
+                Mengerti
               </button>
             </div>
           </div>
         )}
 
-        {/* Project (is_project) — hidden when empty */}
-        <div data-aos="fade-up" data-aos-delay="175">
+
+      </div>
+
+      {/* PopularSection - Full Screen Width (No Container Clipping) */}
+      <div data-aos="fade-up" data-aos-delay="175" className="w-full overflow-hidden">
+        <PopularSection />
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        {/* 2. Projek Section */}
+        <div data-aos="fade-up" data-aos-delay="200">
           <ProjectSection />
         </div>
 
-        {/* Update Section */}
-        <div data-aos="fade-up" data-aos-delay="200">
+        {/* 3. Last Update Section */}
+        <div data-aos="fade-up" data-aos-delay="225">
           <UpdateSection />
         </div>
 
-        {/* Populer Ads - 4 ads above Popular Section */}
-        {populerAds.length > 0 && (
-          <div className="mb-8" data-aos="fade-up" data-aos-delay="250">
-            <AdBanner
-              ads={populerAds}
-              layout="grid"
-              columns={2}
-            />
-          </div>
-        )}
+        {/* 4. Manhwa Section */}
+        <div data-aos="fade-up" data-aos-delay="250">
+          {homeManhwaAds.length > 0 && (
+            <div className="mb-6">
+              <AdBanner ads={homeManhwaAds} layout="grid" columns={2} />
+            </div>
+          )}
+          <ComicTypeSection
+            title="MANHWA"
+            type="manhwa"
+            targetUrl="/content?type=Manhwa"
+          />
+        </div>
 
-        {/* Popular Section */}
+        {/* 5. Manga Section */}
+        <div data-aos="fade-up" data-aos-delay="275">
+          {homeMangaAds.length > 0 && (
+            <div className="mb-6">
+              <AdBanner ads={homeMangaAds} layout="grid" columns={2} />
+            </div>
+          )}
+          <ComicTypeSection
+            title="MANGA"
+            type="manga"
+            targetUrl="/content?type=Manga"
+          />
+        </div>
+
+        {/* 6. Manhua Section */}
         <div data-aos="fade-up" data-aos-delay="300">
-          <PopularSection />
+          {homeManhuaAds.length > 0 && (
+            <div className="mb-6">
+              <AdBanner ads={homeManhuaAds} layout="grid" columns={2} />
+            </div>
+          )}
+          <ComicTypeSection
+            title="MANHUA"
+            type="manhua"
+            targetUrl="/content?type=Manhua"
+          />
         </div>
 
         {/* Home Footer Ads - 2 ads at bottom */}
@@ -721,7 +615,13 @@ const Home = () => {
         )}
       </div>
 
-      {/* <LiveChatWidget /> */}
+      <LiveChatWidget />
+
+      <LoginModal
+        open={loginOpen}
+        onClose={closeLogin}
+        onSuccess={() => handleLoginSuccess(navigate)}
+      />
     </div>
   );
 };

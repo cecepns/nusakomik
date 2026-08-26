@@ -1,7 +1,7 @@
 const db = require('../db');
 
-const DEFAULT_SITE_URL = 'https://id.nusakomik.com';
-const DEFAULT_API_URL = 'http://api-be.nusakomik.com';
+const DEFAULT_SITE_URL = 'https://id.komiknesia.net';
+const DEFAULT_API_URL = 'https://api-be.komiknesia.my.id';
 
 const normalizeUrl = (url, fallback) => {
   const raw = (url || '').trim();
@@ -14,7 +14,7 @@ const getEnv = (key) => {
   return env[key];
 };
 
-const SITEMAP_SITE_URL = 'https://id.nusakomik.com';
+const SITEMAP_SITE_URL = 'https://id.komiknesia.net';
 
 const getSiteUrl = () => {
   return normalizeUrl(SITEMAP_SITE_URL, DEFAULT_SITE_URL);
@@ -89,6 +89,7 @@ const sitemapMain = async (req, res) => {
       FROM manga 
       WHERE slug IS NOT NULL AND slug != ''
       ORDER BY updated_at DESC
+      LIMIT 100
     `);
 
     const [chapterRows] = await db.execute(`
@@ -96,6 +97,7 @@ const sitemapMain = async (req, res) => {
       FROM chapters c
       WHERE c.slug IS NOT NULL AND c.slug != ''
       ORDER BY c.updated_at DESC
+      LIMIT 100
     `);
 
     const now = new Date().toISOString().split('T')[0];
@@ -206,6 +208,7 @@ const sitemapManga = async (req, res) => {
       FROM manga 
       WHERE slug IS NOT NULL AND slug != ''
       ORDER BY updated_at DESC
+      LIMIT 100
     `);
 
     const now = new Date().toISOString().split('T')[0];
@@ -257,6 +260,7 @@ const sitemapChapters = async (req, res) => {
       FROM chapters c
       WHERE c.slug IS NOT NULL AND c.slug != ''
       ORDER BY c.updated_at DESC
+      LIMIT 100
     `);
 
     const now = new Date().toISOString().split('T')[0];

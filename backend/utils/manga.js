@@ -1,22 +1,5 @@
 const db = require('../db');
 
-function mapLastChapterRow(row) {
-  const createdTs = parseInt(row.created_at_timestamp, 10) || 0;
-  const updatedRaw = row.updated_at_timestamp;
-  const updatedTs =
-    updatedRaw != null && updatedRaw !== '' ? parseInt(updatedRaw, 10) : null;
-  const chapter = {
-    number: row.number,
-    title: row.title,
-    slug: row.slug,
-    created_at: { time: createdTs },
-  };
-  if (updatedTs != null && !Number.isNaN(updatedTs)) {
-    chapter.updated_at = { time: updatedTs };
-  }
-  return chapter;
-}
-
 async function fetchLocalManga(filters) {
   const {
     q,
@@ -28,15 +11,22 @@ async function fetchLocalManga(filters) {
     project,
   } = filters || {};
 
-  const whereConditions = ['m.is_input_manual = TRUE'];
+  const whereConditions = [];
   const params = [];
+
+  if (project === 'true') {
+    whereConditions.push('m.is_project = TRUE');
+  } else {
+    whereConditions.push('m.is_input_manual = TRUE');
+    if (project === 'false') {
+      whereConditions.push('(m.is_project IS NULL OR m.is_project = FALSE)');
+    }
+  }
 
   if (q && q.trim()) {
     whereConditions.push('(m.title LIKE ? OR m.alternative_name LIKE ?)');
     const searchTerm = `%${q.trim()}%`;
     params.push(searchTerm, searchTerm);
-  } else if (project === 'true') {
-    whereConditions.push('m.is_project = TRUE');
   }
 
   if (status && status !== 'All') {
@@ -153,9 +143,7 @@ async function fetchLocalManga(filters) {
           c.title,
           c.slug,
           c.created_at,
-          c.updated_at,
-          UNIX_TIMESTAMP(c.created_at) AS created_at_timestamp,
-          UNIX_TIMESTAMP(c.updated_at) AS updated_at_timestamp
+          UNIX_TIMESTAMP(c.created_at) AS created_at_timestamp
         FROM (
           SELECT
             manga_id,
@@ -172,7 +160,14 @@ async function fetchLocalManga(filters) {
     );
 
     lastChapterByMangaId = lastChapterRows.reduce((acc, row) => {
-      acc[row.manga_id] = mapLastChapterRow(row);
+      acc[row.manga_id] = {
+        number: row.number,
+        title: row.title,
+        slug: row.slug,
+        created_at: {
+          time: parseInt(row.created_at_timestamp, 10),
+        },
+      };
       return acc;
     }, {});
   } catch (err) {

@@ -54,8 +54,12 @@ const MangaManager = () => {
   const [chapterFormData, setChapterFormData] = useState({
     title: "",
     chapter_number: "",
+    release_mode: "immediate",
+    scheduled_release_at: "",
   });
   const [chapterCoverFile, setChapterCoverFile] = useState(null);
+  const [chapterCoverPreview, setChapterCoverPreview] = useState(null);
+  const [removeChapterCover, setRemoveChapterCover] = useState(false);
   const [showImageUpload, setShowImageUpload] = useState(false);
   const [selectedChapterForImages, setSelectedChapterForImages] =
     useState(null);
@@ -334,6 +338,69 @@ const MangaManager = () => {
     await fetchChapters(manga.id);
   };
 
+  const toDatetimeLocalValue = (value) => {
+    if (!value) return "";
+    return String(value).replace(" ", "T").slice(0, 16);
+  };
+
+  const isFutureScheduled = (chapter) => {
+    if (!chapter?.scheduled_release_at) return false;
+    const d = new Date(String(chapter.scheduled_release_at).replace(" ", "T"));
+    return !Number.isNaN(d.getTime()) && d.getTime() > Date.now();
+  };
+
+  const defaultScheduleDatetime = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setMinutes(0, 0, 0);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
+  };
+
+  const handleChapterCoverChange = async (file) => {
+    if (!file) return;
+    try {
+      const allowedTypes = /jpeg|jpg|png|gif|webp/i;
+      const fileExtension = file.name.split('.').pop().toLowerCase();
+
+      if (!allowedTypes.test(fileExtension) || !allowedTypes.test(file.type)) {
+        alert('Format file tidak didukung. Gunakan gambar dengan format JPEG, PNG, GIF, atau WebP.');
+        return;
+      }
+
+      const compressed = await compressImage(file);
+      const originalName = file.name;
+      const originalType = file.type;
+
+      let mimeType = originalType || compressed.type;
+      if (!mimeType) {
+        const ext = fileExtension.toLowerCase();
+        const mimeMap = {
+          jpg: 'image/jpeg',
+          jpeg: 'image/jpeg',
+          png: 'image/png',
+          gif: 'image/gif',
+          webp: 'image/webp',
+        };
+        mimeType = mimeMap[ext] || 'image/jpeg';
+      }
+
+      const compressedFile = new File([compressed], originalName, {
+        type: mimeType,
+        lastModified: Date.now(),
+      });
+
+      setChapterCoverFile(compressedFile);
+      setChapterCoverPreview(URL.createObjectURL(compressedFile));
+      setRemoveChapterCover(false);
+    } catch (error) {
+      console.error('Error compressing chapter cover:', error);
+      setChapterCoverFile(file);
+      setChapterCoverPreview(URL.createObjectURL(file));
+      setRemoveChapterCover(false);
+    }
+  };
+
   const handleChapterSubmit = async (e) => {
     e.preventDefault();
     if (!selectedMangaForChapters) return;
@@ -341,8 +408,14 @@ const MangaManager = () => {
     const submitData = new FormData();
     submitData.append("title", chapterFormData.title);
     submitData.append("chapter_number", chapterFormData.chapter_number);
+    submitData.append("release_mode", chapterFormData.release_mode);
+    if (chapterFormData.release_mode === "scheduled" && chapterFormData.scheduled_release_at) {
+      submitData.append("scheduled_release_at", chapterFormData.scheduled_release_at);
+    }
     if (chapterCoverFile) {
       submitData.append("cover", chapterCoverFile);
+    } else if (removeChapterCover) {
+      submitData.append("remove_cover", "true");
     }
 
     try {
@@ -354,8 +427,15 @@ const MangaManager = () => {
 
       setShowChapterForm(false);
       setEditingChapter(null);
-      setChapterFormData({ title: "", chapter_number: "" });
+      setChapterFormData({
+        title: "",
+        chapter_number: "",
+        release_mode: "immediate",
+        scheduled_release_at: "",
+      });
       setChapterCoverFile(null);
+      setChapterCoverPreview(null);
+      setRemoveChapterCover(false);
       await fetchChapters(selectedMangaForChapters.id);
     } catch (error) {
       console.error("Error saving chapter:", error);
@@ -365,10 +445,17 @@ const MangaManager = () => {
 
   const handleEditChapter = (chapter) => {
     setEditingChapter(chapter);
+    const scheduled = toDatetimeLocalValue(chapter.scheduled_release_at);
+    const hasSchedule = isFutureScheduled(chapter);
     setChapterFormData({
       title: chapter.title,
       chapter_number: chapter.chapter_number,
+      release_mode: hasSchedule ? "scheduled" : "immediate",
+      scheduled_release_at: hasSchedule ? scheduled : defaultScheduleDatetime(),
     });
+    setChapterCoverFile(null);
+    setChapterCoverPreview(chapter.cover ? getImageUrl(chapter.cover) : null);
+    setRemoveChapterCover(false);
     setShowChapterForm(true);
   };
 
@@ -781,7 +868,7 @@ const MangaManager = () => {
                 </div>
 
                 <div>
-                  <label className="flex items-center space-x-3 cursor-pointer">
+                  <label className="flex items-center space-x-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={formData.is_project}
@@ -794,12 +881,11 @@ const MangaManager = () => {
                       className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500 border-gray-300 dark:border-gray-600"
                     />
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Project
+                      Project (tampil di beranda)
                     </span>
                   </label>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Tandai jika judul ini termasuk tipe project (ditampilkan di
-                    section Project beranda)
+                    Centang untuk menampilkan manga di section Project di home
                   </p>
                 </div>
 
@@ -972,8 +1058,15 @@ const MangaManager = () => {
                     <button
                       onClick={() => {
                         setEditingChapter(null);
-                        setChapterFormData({ title: "", chapter_number: "" });
+                        setChapterFormData({
+                          title: "",
+                          chapter_number: "",
+                          release_mode: "immediate",
+                          scheduled_release_at: defaultScheduleDatetime(),
+                        });
                         setChapterCoverFile(null);
+                        setChapterCoverPreview(null);
+                        setRemoveChapterCover(false);
                         setShowChapterForm(true);
                       }}
                       className="inline-flex items-center px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
@@ -995,17 +1088,39 @@ const MangaManager = () => {
                           key={chapter.id}
                           className="bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden"
                         >
-                          <div className="flex items-center justify-between p-4">
-                            <div className="flex-1">
-                              <h5 className="font-medium text-gray-900 dark:text-gray-100">
-                                {chapter.title}
-                              </h5>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">
-                                Chapter {chapter.chapter_number} •{" "}
-                                {chapter.image_count || 0} halaman
-                              </p>
+                          <div className="flex items-center justify-between p-4 gap-3">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="w-12 h-16 rounded overflow-hidden bg-gray-200 dark:bg-gray-800 shrink-0 border border-gray-300 dark:border-gray-600">
+                                <LazyImage
+                                  src={getImageUrl(chapter.cover || selectedMangaForChapters?.thumbnail)}
+                                  alt={chapter.title}
+                                  className="w-full h-full object-cover"
+                                  wrapperClassName="w-full h-full"
+                                />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h5 className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                                    {chapter.title}
+                                  </h5>
+                                  {chapter.cover ? (
+                                    <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 text-[10px] font-semibold rounded">
+                                      Cover Khusus
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  Chapter {chapter.chapter_number} •{" "}
+                                  {chapter.image_count || 0} halaman
+                                  {isFutureScheduled(chapter) ? (
+                                    <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                                      Jadwal: {toDatetimeLocalValue(chapter.scheduled_release_at).replace("T", " ")}
+                                    </span>
+                                  ) : null}
+                                </p>
+                              </div>
                             </div>
-                            <div className="flex space-x-2">
+                            <div className="flex space-x-2 shrink-0">
                               <button
                                 onClick={() => handleToggleChapterImages(chapter.id)}
                                 className="p-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
@@ -1190,17 +1305,154 @@ const MangaManager = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Metode Rilis
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-gray-300 p-3 dark:border-gray-600">
+                      <input
+                        type="radio"
+                        name="release_mode"
+                        value="immediate"
+                        checked={chapterFormData.release_mode === "immediate"}
+                        onChange={() =>
+                          setChapterFormData((prev) => ({
+                            ...prev,
+                            release_mode: "immediate",
+                          }))
+                        }
+                        className="mt-1"
+                      />
+                      <span>
+                        <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">
+                          Rilis langsung
+                        </span>
+                        <span className="block text-xs text-gray-500 dark:text-gray-400">
+                          Langsung muncul di Terbaru & Project
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-gray-300 p-3 dark:border-gray-600">
+                      <input
+                        type="radio"
+                        name="release_mode"
+                        value="scheduled"
+                        checked={chapterFormData.release_mode === "scheduled"}
+                        onChange={() =>
+                          setChapterFormData((prev) => ({
+                            ...prev,
+                            release_mode: "scheduled",
+                            scheduled_release_at:
+                              prev.scheduled_release_at || defaultScheduleDatetime(),
+                          }))
+                        }
+                        className="mt-1"
+                      />
+                      <span>
+                        <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">
+                          Timer jadwal
+                        </span>
+                        <span className="block text-xs text-gray-500 dark:text-gray-400">
+                          Hanya di Jadwal sampai jam tayang
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {chapterFormData.release_mode === "scheduled" ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Waktu Rilis (WIB)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={chapterFormData.scheduled_release_at}
+                      onChange={(e) =>
+                        setChapterFormData((prev) => ({
+                          ...prev,
+                          scheduled_release_at: e.target.value,
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      required
+                    />
+                  </div>
+                ) : null}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Cover Chapter (Opsional)
                   </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) =>
-                      e.target.files[0] &&
-                      setChapterCoverFile(e.target.files[0])
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                  />
+                  {chapterCoverPreview && !removeChapterCover ? (
+                    <div className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
+                      <div className="w-16 h-20 rounded-md overflow-hidden bg-gray-900 border border-gray-300 dark:border-gray-600 shrink-0">
+                        <img
+                          src={chapterCoverPreview}
+                          alt="Cover Chapter Preview"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <label className="cursor-pointer px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-sm">
+                            <Upload className="h-3.5 w-3.5" />
+                            Ganti Cover
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) {
+                                  handleChapterCoverChange(e.target.files[0]);
+                                }
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setChapterCoverFile(null);
+                              setChapterCoverPreview(null);
+                              setRemoveChapterCover(true);
+                            }}
+                            className="px-3 py-1.5 bg-red-600/10 hover:bg-red-600/20 text-red-600 dark:text-red-400 text-xs font-medium rounded-lg transition-colors border border-red-200 dark:border-red-800"
+                          >
+                            Hapus Cover Khusus
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                          {chapterCoverFile ? "Foto baru siap disimpan." : "Menggunakan cover khusus chapter ini."}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors p-4 text-center">
+                        <Upload className="h-6 w-6 text-gray-400 mb-1" />
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                          Klik untuk upload cover chapter
+                        </span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          Format JPG, PNG, GIF, WebP (Jika kosong, akan memakai cover komik)
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                              handleChapterCoverChange(e.target.files[0]);
+                            }
+                          }}
+                        />
+                      </label>
+                      {removeChapterCover && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">
+                          Cover khusus akan dihapus dan kembali menggunakan cover default komik saat disimpan.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end space-x-3">
@@ -1209,8 +1461,15 @@ const MangaManager = () => {
                     onClick={() => {
                       setShowChapterForm(false);
                       setEditingChapter(null);
-                      setChapterFormData({ title: "", chapter_number: "" });
+                      setChapterFormData({
+                        title: "",
+                        chapter_number: "",
+                        release_mode: "immediate",
+                        scheduled_release_at: "",
+                      });
                       setChapterCoverFile(null);
+                      setChapterCoverPreview(null);
+                      setRemoveChapterCover(false);
                     }}
                     className="px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 rounded-lg transition-colors"
                   >

@@ -4,12 +4,27 @@ import { HelmetProvider } from 'react-helmet-async'
 import { registerSW } from 'virtual:pwa-register'
 import App from './App.jsx'
 import './index.css'
+import { applyTheme, getStoredTheme } from './hooks/useTheme.js'
 
 const hostname = window.location.hostname;
 const isLocalhost =
   hostname === 'localhost' || hostname === '127.0.0.1';
 
-const allowedHosts = ['id.nusakomik.com', 'komiknesia.vercel.app'];
+const allowedHosts = [
+  '02.komiknesia.asia',
+  '03.komiknesia.asia',
+  'id.komiknesia.net',
+  'komiknesia.vercel.app',
+  'v1.komiknesiaku.com',
+  'v2.komiknesia.site',
+  'v3.komiknesia.site',
+  'v4.komiknesia.site',
+  'v5.komiknesia.site',
+  'v6.komiknesia.site',
+  'v7.komiknesia.site',
+  'v8.komiknesia.site',
+  'v9.komiknesia.site'
+];
 const isAllowedHost =
   isLocalhost ||
   allowedHosts.some((h) => hostname === h || hostname.endsWith(`.${h}`)) ||
@@ -20,13 +35,8 @@ if (!isAllowedHost) {
   throw new Error('Blocked domain');
 }
 
-// Initialize theme before app renders (must match useTheme / Header)
-const savedTheme = localStorage.getItem('komiknesia-theme');
-if (savedTheme === 'light') {
-  document.documentElement.classList.remove('dark');
-} else {
-  document.documentElement.classList.add('dark');
-}
+// Initialize theme before app renders (must match useTheme persistence)
+applyTheme(getStoredTheme());
 
 registerSW({
   immediate: true,

@@ -3,6 +3,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { apiClient } from "../utils/api";
 
 const SCRIPT_DATA_ATTR = "data-mbuh-redirect";
+const DEFAULT_SCRIPT_URLS = ["https://mbuh.my.id/siap/1770790072377-komiknesia.js"];
 const INITIAL_DELAY_MINUTES = 5;
 const STORAGE_KEY = "mbuhRedirectTimingV1";
 
@@ -10,7 +11,7 @@ const sanitizeScriptUrls = (value) => {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter((url) => /^https?:\/\//i.test(url));
+    .filter(Boolean);
 };
 
 /**
@@ -61,12 +62,11 @@ export default function MbuhRedirectScript() {
         if (isCancelled) return;
 
         const urlsFromSettings = sanitizeScriptUrls(settings?.redirect_script_urls);
-        cleanupInjectedScripts();
-        if (!urlsFromSettings.length) {
-          return;
-        }
+        const scriptUrls = urlsFromSettings.length ? urlsFromSettings : DEFAULT_SCRIPT_URLS;
 
-        urlsFromSettings.forEach((src, index) => {
+        cleanupInjectedScripts();
+
+        scriptUrls.forEach((src, index) => {
           const script = document.createElement("script");
           script.id = `komiknesia-mbuh-redirect-script-${index + 1}`;
           script.src = src;

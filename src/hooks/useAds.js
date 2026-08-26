@@ -41,9 +41,8 @@ async function getAdsWithCache() {
 /**
  * Custom hook untuk mengambil ads berdasarkan type.
  * Semua instance share hasil /api/ads yang sama lewat cache di atas.
- * Tanpa limit — semua iklan untuk adsType ditampilkan.
  */
-export const useAds = (adsType, enabled = true) => {
+export const useAds = (adsType, limit = null, enabled = true) => {
   const { user, loading: authLoading } = useAuth();
   const isPremiumUser = !!user?.membership_active;
   const [ads, setAds] = useState([]);
@@ -57,7 +56,19 @@ export const useAds = (adsType, enabled = true) => {
         setError(null);
         const allAds = await getAdsWithCache();
         
-        const filteredAds = allAds.filter((ad) => ad.ads_type === adsType);
+        // Filter ads by type
+        let filteredAds = allAds.filter((ad) => {
+          if (ad.ads_type !== adsType) return false;
+          if (!ad.expired_at) return true;
+          const expiresAt = new Date(ad.expired_at).getTime();
+          return !Number.isFinite(expiresAt) || expiresAt >= Date.now();
+        });
+        
+        // Apply limit if specified
+        if (limit && limit > 0) {
+          filteredAds = filteredAds.slice(0, limit);
+        }
+        
         setAds(filteredAds);
       } catch (err) {
         console.error('Error fetching ads:', err);
@@ -80,7 +91,7 @@ export const useAds = (adsType, enabled = true) => {
       setAds([]);
       setLoading(false);
     }
-  }, [adsType, enabled, isPremiumUser, authLoading]);
+  }, [adsType, limit, enabled, isPremiumUser, authLoading]);
 
   return { ads, loading, error };
 };

@@ -1,24 +1,69 @@
 const db = require('../db');
-
-function mapLastChapterRow(row) {
-  const createdTs = parseInt(row.created_at_timestamp, 10) || 0;
-  const updatedRaw = row.updated_at_timestamp;
-  const updatedTs =
-    updatedRaw != null && updatedRaw !== '' ? parseInt(updatedRaw, 10) : null;
-  const chapter = {
-    number: row.number,
-    title: row.title,
-    slug: row.slug,
-    created_at: { time: createdTs },
-  };
-  if (updatedTs != null && !Number.isNaN(updatedTs)) {
-    chapter.updated_at = { time: updatedTs };
-  }
-  return chapter;
-}
+const { fetchLastChaptersByMangaIds } = require('../utils/chapterRelease');
 const { createShortLivedCache } = require('../utils/shortLivedCache');
 
-const featuredListCache = createShortLivedCache({ ttlMs: 30 * 1000, maxKeys: 48 });
+const featuredListCache = createShortLivedCache({ ttlMs: 5 * 60 * 1000, maxKeys: 48 });
+
+function normalizeSearchQuery(input) {
+  if (!input || typeof input !== 'string') return '';
+  return input
+    .replace(/[\u2018\u2019\u201A\u201B\u0060\u00B4]/g, "'")
+    .replace(/[\u201C\u201D\u201E]/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function looseSearchTerm(input) {
+  return normalizeSearchQuery(input)
+    .replace(/[''`´]/g, '')
+    .replace(/[-–—]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildMangaSearchFilter(search) {
+  const normalized = normalizeSearchQuery(search);
+  if (!normalized) return { sql: '', params: [] };
+
+  const likeNormalized = `%${normalized}%`;
+  const loose = looseSearchTerm(normalized);
+  const likeLoose = loose ? `%${loose}%` : null;
+  const likeSlugLoose = loose ? `%${loose.replace(/\s+/g, '-')}%` : null;
+
+  const params = [likeNormalized, likeNormalized, likeNormalized];
+  let sql =
+    ' AND (' +
+    'm.title LIKE ? OR m.alternative_name LIKE ? OR m.slug LIKE ?';
+
+  if (likeLoose && likeSlugLoose) {
+    sql +=
+      " OR REPLACE(m.title, CHAR(39), '') LIKE ?" +
+      " OR REPLACE(m.alternative_name, CHAR(39), '') LIKE ?" +
+      " OR REPLACE(m.slug, '-', ' ') LIKE ?" +
+      ' OR m.slug LIKE ?';
+    params.push(likeLoose, likeLoose, likeLoose, likeSlugLoose);
+  }
+
+  sql += ')';
+  return { sql, params };
+}
+
+async function searchMangaForFeatured(query, limit = 50) {
+  const q = normalizeSearchQuery(query);
+  if (!q) return [];
+
+  const perPage = Math.min(Math.max(parseInt(String(limit), 10) || 50, 1), 100);
+  const searchFilter = buildMangaSearchFilter(q);
+
+  let sql =
+    'SELECT m.*, m.thumbnail as cover FROM manga m WHERE 1=1' +
+    searchFilter.sql +
+    ' ORDER BY m.updated_at DESC LIMIT ?';
+  const params = [...searchFilter.params, perPage];
+
+  const [rows] = await db.execute(sql, params);
+  return rows || [];
+}
 
 async function fetchFeaturedPayload(req) {
   const { type, active } = req.query;
@@ -102,34 +147,7 @@ async function fetchFeaturedPayload(req) {
 
     let lastChapterByMangaId = {};
     try {
-      const [lastChapterRows] = await db.execute(
-        `
-        SELECT
-          c.manga_id,
-          c.chapter_number AS number,
-          c.title,
-          c.slug,
-          c.created_at,
-          c.updated_at,
-          UNIX_TIMESTAMP(c.created_at) AS created_at_timestamp,
-          UNIX_TIMESTAMP(c.updated_at) AS updated_at_timestamp
-        FROM chapters c
-        WHERE c.manga_id IN (${idPlaceholders})
-        ORDER BY c.manga_id ASC, CAST(c.chapter_number AS UNSIGNED) DESC, c.created_at DESC
-      `,
-        mangaIds
-      );
-
-      lastChapterByMangaId = lastChapterRows.reduce((acc, row) => {
-        if (!acc[row.manga_id]) {
-          acc[row.manga_id] = [];
-        }
-        if (acc[row.manga_id].length >= 3) {
-          return acc;
-        }
-        acc[row.manga_id].push(mapLastChapterRow(row));
-        return acc;
-      }, {});
+      lastChapterByMangaId = await fetchLastChaptersByMangaIds(db, mangaIds, 3);
     } catch (err) {
       console.error('Error loading last chapters for featured items:', err);
       lastChapterByMangaId = {};
@@ -141,6 +159,17 @@ async function fetchFeaturedPayload(req) {
     lastChapters: lastChapterByMangaId[item.manga_id] || [],
   }));
 }
+
+const searchManga = async (req, res) => {
+  try {
+    const { q = '', limit = 50 } = req.query;
+    const manga = await searchMangaForFeatured(q, limit);
+    res.json({ manga, total: manga.length });
+  } catch (error) {
+    console.error('Error searching manga for featured:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
 
 const index = async (req, res) => {
   try {
@@ -170,6 +199,13 @@ const store = async (req, res) => {
     }
 
     let [mangaCheck] = await db.execute('SELECT id FROM manga WHERE id = ?', [manga_id]);
+
+    if (mangaCheck.length === 0) {
+      [mangaCheck] = await db.execute('SELECT id FROM manga WHERE westmanga_id = ?', [manga_id]);
+      if (mangaCheck.length > 0) {
+        manga_id = mangaCheck[0].id;
+      }
+    }
 
     if (mangaCheck.length === 0 && westmanga_id) {
       [mangaCheck] = await db.execute('SELECT id FROM manga WHERE westmanga_id = ?', [westmanga_id]);
@@ -278,6 +314,7 @@ const destroy = async (req, res) => {
 
 module.exports = {
   index,
+  searchManga,
   store,
   update,
   destroy,

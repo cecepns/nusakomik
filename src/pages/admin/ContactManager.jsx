@@ -1,15 +1,5 @@
 import { useState, useEffect } from 'react';
-import {
-  Save,
-  Mail,
-  MessageCircle,
-  FileText,
-  Trash2,
-  Send,
-  Music2,
-  Instagram,
-  Facebook,
-} from 'lucide-react';
+import { Save, Mail, MessageCircle, FileText, Trash2, Send } from 'lucide-react';
 import { apiClient } from '../../utils/api';
 
 const ContactManager = () => {
@@ -19,12 +9,9 @@ const ContactManager = () => {
   const [formData, setFormData] = useState({
     email: '',
     whatsapp: '',
+    telegram: '',
     description: '',
-    telegram_url: '',
-    tiktok_url: '',
-    instagram_url: '',
-    facebook_url: '',
-    is_active: true,
+    is_active: true
   });
 
   useEffect(() => {
@@ -40,12 +27,9 @@ const ContactManager = () => {
         setFormData({
           email: data.email || '',
           whatsapp: data.whatsapp || '',
+          telegram: data.telegram || '',
           description: data.description || '',
-          telegram_url: data.telegram_url || '',
-          tiktok_url: data.tiktok_url || '',
-          instagram_url: data.instagram_url || '',
-          facebook_url: data.facebook_url || '',
-          is_active: data.is_active !== undefined ? data.is_active : true,
+          is_active: data.is_active !== undefined ? data.is_active : true
         });
       }
     } catch (error) {
@@ -95,11 +79,7 @@ const ContactManager = () => {
         email: '',
         whatsapp: '',
         description: '',
-        telegram_url: '',
-        tiktok_url: '',
-        instagram_url: '',
-        facebook_url: '',
-        is_active: true,
+        is_active: true
       });
       alert('Informasi kontak berhasil dihapus');
     } catch (error) {
@@ -178,6 +158,24 @@ const ContactManager = () => {
             )}
           </div>
 
+          {/* Telegram */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <Send className="h-4 w-4 inline-block mr-2" />
+              Telegram (Username / Link)
+            </label>
+            <input
+              type="text"
+              value={formData.telegram}
+              onChange={(e) => setFormData(prev => ({ ...prev, telegram: e.target.value }))}
+              placeholder="@KomikNesiaOfficial atau https://t.me/KomikNesiaOfficial"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Contoh: @KomikNesiaOfficial atau link t.me
+            </p>
+          </div>
+
           {/* Description */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -194,70 +192,6 @@ const ContactManager = () => {
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Deskripsi yang akan ditampilkan di halaman kontak
             </p>
-          </div>
-
-          <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-600 dark:bg-gray-800/50">
-            <p className="mb-4 text-sm font-semibold text-gray-800 dark:text-gray-200">
-              Tautan sosial media (opsional)
-            </p>
-            <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
-              Kosongkan jika tidak ingin menampilkan tombol di halaman kontak. Gunakan URL lengkap, mis.{" "}
-              <code className="rounded bg-gray-200 px-1 dark:bg-gray-700">https://t.me/username</code>
-            </p>
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                  <Send className="h-4 w-4" aria-hidden />
-                  Telegram
-                </label>
-                <input
-                  type="url"
-                  value={formData.telegram_url}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, telegram_url: e.target.value }))}
-                  placeholder="https://t.me/nusakomik"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                />
-              </div>
-              <div>
-                <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                  <Music2 className="h-4 w-4" aria-hidden />
-                  TikTok
-                </label>
-                <input
-                  type="url"
-                  value={formData.tiktok_url}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, tiktok_url: e.target.value }))}
-                  placeholder="https://www.tiktok.com/@..."
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                />
-              </div>
-              <div>
-                <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                  <Instagram className="h-4 w-4" aria-hidden />
-                  Instagram
-                </label>
-                <input
-                  type="url"
-                  value={formData.instagram_url}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, instagram_url: e.target.value }))}
-                  placeholder="https://www.instagram.com/..."
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                />
-              </div>
-              <div>
-                <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                  <Facebook className="h-4 w-4" aria-hidden />
-                  Facebook
-                </label>
-                <input
-                  type="url"
-                  value={formData.facebook_url}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, facebook_url: e.target.value }))}
-                  placeholder="https://www.facebook.com/..."
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                />
-              </div>
-            </div>
           </div>
 
           {/* Active Status */}
@@ -331,47 +265,28 @@ const ContactManager = () => {
                 </a>
               </div>
             </div>
+            {formData.telegram && (
+              <div className="flex items-center space-x-3">
+                <Send className="h-5 w-5 text-sky-500" />
+                <div>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Telegram</p>
+                  <a 
+                    href={formData.telegram.startsWith('http') ? formData.telegram : formData.telegram.startsWith('@') ? `https://t.me/${formData.telegram.slice(1)}` : `https://t.me/${formData.telegram}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sky-500 hover:underline"
+                  >
+                    {formData.telegram}
+                  </a>
+                </div>
+              </div>
+            )}
             {formData.description && (
               <div>
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Deskripsi</p>
                 <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
                   {formData.description}
                 </p>
-              </div>
-            )}
-            {(formData.telegram_url?.trim() ||
-              formData.tiktok_url?.trim() ||
-              formData.instagram_url?.trim() ||
-              formData.facebook_url?.trim()) && (
-              <div>
-                <p className="mb-2 text-sm font-medium text-gray-500 dark:text-gray-400">
-                  Sosial media (tampil jika diisi)
-                </p>
-                <ul className="list-inside list-disc space-y-1 text-sm text-gray-700 dark:text-gray-300">
-                  {formData.telegram_url?.trim() && (
-                    <li>
-                      Telegram:{" "}
-                      <span className="break-all">{formData.telegram_url.trim()}</span>
-                    </li>
-                  )}
-                  {formData.tiktok_url?.trim() && (
-                    <li>
-                      TikTok: <span className="break-all">{formData.tiktok_url.trim()}</span>
-                    </li>
-                  )}
-                  {formData.instagram_url?.trim() && (
-                    <li>
-                      Instagram:{" "}
-                      <span className="break-all">{formData.instagram_url.trim()}</span>
-                    </li>
-                  )}
-                  {formData.facebook_url?.trim() && (
-                    <li>
-                      Facebook:{" "}
-                      <span className="break-all">{formData.facebook_url.trim()}</span>
-                    </li>
-                  )}
-                </ul>
               </div>
             )}
           </div>

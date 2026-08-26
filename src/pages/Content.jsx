@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import { X, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, ChevronDown, ChevronLeft, ChevronRight, Filter, LayoutGrid, List } from "lucide-react";
 import LazyImage from "../components/LazyImage";
 import AdBanner from "../components/AdBanner";
 import { useAds } from "../hooks/useAds";
 import { getImageUrl } from "../utils/api";
 import { API_BASE_URL } from "../utils/api";
 import { getChapterTimeAgo } from "../utils/chapterTime";
+import LiveChatWidget from "../components/LiveChatWidget";
+import ChapterAccessLink from "../components/ChapterAccessLink";
 const statusOptions = ["All", "Ongoing", "Completed", "Hiatus"];
 const typeOptions = [
   { label: "All", value: "All", country: null },
@@ -22,6 +24,12 @@ const projectFilterOptions = [
   { label: "Semua", value: "all" },
   { label: "Project", value: "true" },
   { label: "Bukan project", value: "false" },
+];
+
+const sourceOptions = [
+  { label: "Semua Source", value: "all" },
+  { label: "Source 1", value: "kiryu" },
+  { label: "Source 2", value: "apkomik" },
 ];
 
 const Content = () => {
@@ -56,30 +64,22 @@ const Content = () => {
   const selectedProject =
     projectParam === "true" || projectParam === "false" ? projectParam : "all";
 
-  // Mobile dropdown states
-  const [showGenreDropdown, setShowGenreDropdown] = useState(false);
-  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
-  const [showTypeDropdown, setShowTypeDropdown] = useState(false);
-  const [showOrderDropdown, setShowOrderDropdown] = useState(false);
-  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const selectedSource = sourceOptions.some(
+    (opt) => opt.value === (searchParams.get("source") || ""),
+  )
+    ? searchParams.get("source")
+    : "all";
 
-  // Refs for click outside detection
-  const genreDropdownRef = useRef(null);
-  const statusDropdownRef = useRef(null);
-  const typeDropdownRef = useRef(null);
-  const orderDropdownRef = useRef(null);
-  const projectDropdownRef = useRef(null);
+  // Mobile filter & view mode states
+  const [showMobileFilterModal, setShowMobileFilterModal] = useState(false);
+  const [viewMode, setViewMode] = useState("grid");
 
   // Load genres from API
   useEffect(() => {
     const fetchGenres = async () => {
       setGenresLoading(true);
       try {
-        const isProjectFilterActive = selectedProject !== "all";
-        const url = isProjectFilterActive
-          ? `${API_BASE_URL}/contents/genres`
-          : "https://api-be.komiknesia.my.id/api/contents/genres";
-        const response = await fetch(url);
+        const response = await fetch(`${API_BASE_URL}/contents/genres`);
         const data = await response.json();
         if (data.status && data.data) {
           setGenres(data.data);
@@ -91,7 +91,7 @@ const Content = () => {
       }
     };
     fetchGenres();
-  }, [selectedProject]);
+  }, []);
 
   const selectedGenres = useMemo(() => {
     const genreIdParams = searchParams
@@ -117,6 +117,17 @@ const Content = () => {
 
     return [];
   }, [searchParams, genres]);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (selectedStatus !== "All") count++;
+    if (selectedType !== "All") count++;
+    if (selectedProject !== "all") count++;
+    if (selectedSource !== "all") count++;
+    if (selectedOrder !== "Update") count++;
+    if (selectedGenres.length > 0) count += selectedGenres.length;
+    return count;
+  }, [selectedStatus, selectedType, selectedProject, selectedSource, selectedOrder, selectedGenres]);
 
   const updateSearchParams = useCallback(
     (updater) => {
@@ -185,6 +196,17 @@ const Content = () => {
     [updateSearchParams],
   );
 
+  const setSourceFilter = useCallback(
+    (source) => {
+      updateSearchParams((params) => {
+        if (source === "all") params.delete("source");
+        else params.set("source", source);
+        params.delete("page");
+      });
+    },
+    [updateSearchParams],
+  );
+
   const fetchManga = useCallback(async () => {
     setLoading(true);
     try {
@@ -198,6 +220,11 @@ const Content = () => {
         params.append("project", "true");
       } else if (selectedProject === "false") {
         params.append("project", "false");
+      }
+
+      // Add source filter
+      if (selectedSource !== "all") {
+        params.append("source", selectedSource);
       }
 
       // Common parameters
@@ -225,13 +252,8 @@ const Content = () => {
         params.append("orderBy", selectedOrder);
       }
 
-      const isProjectFilterActive = selectedProject !== "all";
-      const baseUrl = isProjectFilterActive
-        ? `${API_BASE_URL}/contents`
-        : "https://api-be.komiknesia.my.id/api/contents";
-
       const response = await fetch(
-        `${baseUrl}?${params.toString()}`,
+        `${API_BASE_URL}/contents?${params.toString()}`,
       );
       const data = await response.json();
 
@@ -252,6 +274,7 @@ const Content = () => {
     selectedOrder,
     searchQuery,
     selectedProject,
+    selectedSource,
   ]);
 
   // Load manga based on filters
@@ -259,44 +282,11 @@ const Content = () => {
     fetchManga();
   }, [fetchManga]);
 
-  // Close dropdowns when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (
-        genreDropdownRef.current &&
-        !genreDropdownRef.current.contains(event.target)
-      ) {
-        setShowGenreDropdown(false);
-      }
-      if (
-        statusDropdownRef.current &&
-        !statusDropdownRef.current.contains(event.target)
-      ) {
-        setShowStatusDropdown(false);
-      }
-      if (
-        typeDropdownRef.current &&
-        !typeDropdownRef.current.contains(event.target)
-      ) {
-        setShowTypeDropdown(false);
-      }
-      if (
-        orderDropdownRef.current &&
-        !orderDropdownRef.current.contains(event.target)
-      ) {
-        setShowOrderDropdown(false);
-      }
-      if (
-        projectDropdownRef.current &&
-        !projectDropdownRef.current.contains(event.target)
-      ) {
-        setShowProjectDropdown(false);
-      }
-    };
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [currentPage]);
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+
 
   const toggleGenre = (genreId) => {
     updateSearchParams((params) => {
@@ -324,6 +314,7 @@ const Content = () => {
       params.delete("type");
       params.delete("order");
       params.delete("project");
+      params.delete("source");
       params.delete("page");
       if (searchQuery) {
         params.delete("q");
@@ -355,11 +346,10 @@ const Content = () => {
         key="prev"
         onClick={() => setPage(currentPage - 1)}
         disabled={currentPage === 1}
-        className={`px-2 md:px-3 py-2 rounded-lg text-sm md:text-base ${
-          currentPage === 1
-            ? "bg-gray-200 dark:bg-primary-800 text-gray-400 dark:text-gray-600 cursor-not-allowed"
-            : "bg-white dark:bg-primary-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-primary-600"
-        }`}
+        className={`px-2 md:px-3 py-2 rounded-lg text-sm md:text-base ${currentPage === 1
+          ? "bg-gray-200 dark:bg-primary-800 text-gray-400 dark:text-gray-600 cursor-not-allowed"
+          : "bg-white dark:bg-primary-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-primary-600"
+          }`}
       >
         <ChevronLeft className="h-4 w-4 md:h-5 md:w-5" />
       </button>,
@@ -394,11 +384,10 @@ const Content = () => {
         <button
           key={i}
           onClick={() => setPage(i)}
-          className={`px-3 md:px-4 py-2 rounded-lg text-sm md:text-base ${
-            currentPage === i
-              ? "bg-blue-500 text-white"
+          className={`px-3 md:px-4 py-2 rounded-lg text-sm md:text-base ${currentPage === i
+              ? "bg-gradient-to-r from-sky-400 to-blue-600 text-white font-bold shadow-md shadow-sky-500/20"
               : "bg-white dark:bg-primary-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-primary-600"
-          }`}
+            }`}
         >
           {i}
         </button>,
@@ -434,11 +423,10 @@ const Content = () => {
         key="next"
         onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
         disabled={currentPage === totalPages}
-        className={`px-2 md:px-3 py-2 rounded-lg text-sm md:text-base ${
-          currentPage === totalPages
-            ? "bg-gray-200 dark:bg-primary-800 text-gray-400 dark:text-gray-600 cursor-not-allowed"
-            : "bg-white dark:bg-primary-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-primary-600"
-        }`}
+        className={`px-2 md:px-3 py-2 rounded-lg text-sm md:text-base ${currentPage === totalPages
+          ? "bg-gray-200 dark:bg-primary-800 text-gray-400 dark:text-gray-600 cursor-not-allowed"
+          : "bg-white dark:bg-primary-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-primary-600"
+          }`}
       >
         <ChevronRight className="h-4 w-4 md:h-5 md:w-5" />
       </button>,
@@ -466,18 +454,17 @@ const Content = () => {
       </Helmet>
 
       {/* Ads Section - Top — Layout sudah menyediakan Header + pt-16 di main */}
-      <div className="container mx-auto px-4 pt-5 pb-2 md:pt-8">
+      <div className="container mx-auto px-4 pt-1 pb-1 md:pt-3">
         <AdBanner
           ads={comicTopAds}
           layout="grid"
           columns={2}
-          className="gap-4"
         />
       </div>
 
       {/* Page Header */}
       <div className="bg-white dark:bg-transparent border-b border-gray-200 dark:border-white/10 shadow-md dark:shadow-none top-20 z-40">
-        <div className="container mx-auto px-4 py-6 md:py-10">
+        <div className="container mx-auto px-4 py-2 md:py-4">
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">
@@ -503,7 +490,7 @@ const Content = () => {
             </div>
             <button
               onClick={clearAllFilters}
-              className="hidden items-center gap-2 rounded-xl border border-sky-500/25 bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_5px_0_0_#0369a1] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_6px_0_0_#0369a1] active:translate-y-0.5 active:shadow-[0_3px_0_0_#0369a1] md:inline-flex dark:border-cyan-200/20 dark:bg-[#0a2d52] dark:text-cyan-50 dark:shadow-[0_5px_0_0_#0ea5e9] dark:hover:shadow-[0_6px_0_0_#38bdf8] dark:active:shadow-[0_3px_0_0_#0369a1] dark:hover:brightness-110"
+              className="hidden items-center gap-2 rounded-xl bg-gradient-to-r from-sky-400 to-blue-600 px-4 py-2 text-sm font-bold text-white shadow-md shadow-sky-500/20 transition-all hover:from-sky-500 hover:to-blue-700 md:inline-flex"
             >
               <X className="h-5 w-5 shrink-0" />
               <span className="hidden md:inline">Clear All</span>
@@ -512,226 +499,238 @@ const Content = () => {
         </div>
       </div>
 
-      <div className="container mx-auto px-4 pb-8 pt-4 md:pt-8">
-        {/* Mobile Filter Dropdowns */}
-        <div className="lg:hidden mb-6 grid grid-cols-2 gap-3">
-          {/* Genre Dropdown */}
-          <div ref={genreDropdownRef} className="relative">
+      <div className="container mx-auto px-4 pb-8 pt-2 md:pt-4">
+        {/* Mobile Control Bar (View Mode Toggle & Filter Trigger) */}
+        <div className="lg:hidden mb-2 flex items-center justify-between">
+          {/* View Mode Toggle Pill */}
+          <div className="bg-[#141622] rounded-2xl p-1 flex items-center gap-1 shadow-md">
             <button
-              onClick={() => setShowGenreDropdown(!showGenreDropdown)}
-              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-800 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_5px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-cyan-200/20 dark:bg-[#0b355f]/95 dark:text-cyan-50 dark:shadow-[0_4px_0_0_rgba(56,189,248,0.35)] dark:hover:shadow-[0_5px_0_0_rgba(56,189,248,0.45)]"
+              type="button"
+              onClick={() => setViewMode("grid")}
+              className={`p-2 rounded-xl transition-all ${viewMode === "grid"
+                  ? "bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md"
+                  : "text-gray-400 hover:text-white"
+                }`}
+              title="Grid View"
             >
-              <span className="text-sm font-medium">
-                Genre{" "}
-                {selectedGenres.length > 0 && `(${selectedGenres.length})`}
-              </span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${showGenreDropdown ? "rotate-180" : ""}`}
-              />
+              <LayoutGrid className="h-5 w-5" />
             </button>
-            {showGenreDropdown && (
-              <div className="absolute z-50 mt-2 max-h-96 w-full overflow-y-auto rounded-xl border border-slate-200/90 bg-white shadow-[0_6px_0_0_#cbd5e1] dark:border-primary-700 dark:bg-primary-900 dark:shadow-[0_6px_0_0_rgba(30,58,138,0.5)]">
-                <div className="border-b border-slate-200 p-3 dark:border-primary-700">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                      Pilih Genre
-                    </span>
-                    {selectedGenres.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              className={`p-2 rounded-xl transition-all ${viewMode === "list"
+                  ? "bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md"
+                  : "text-gray-400 hover:text-white"
+                }`}
+              title="List View"
+            >
+              <List className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Filter Button */}
+          <button
+            type="button"
+            onClick={() => setShowMobileFilterModal(true)}
+            className="relative bg-[#141622] p-3 rounded-2xl text-sky-400 hover:text-sky-300 transition-colors shadow-md flex items-center justify-center"
+            title="Filter"
+          >
+            <Filter className="h-5 w-5" />
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-r from-sky-400 to-blue-600 text-[10px] font-bold text-white shadow-sm ring-2 ring-[#141622]">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Mobile Bottom Sheet Filter Modal */}
+        {showMobileFilterModal && (
+          <div
+            className="fixed inset-0 z-[120] flex items-end justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4 lg:hidden"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="w-full max-w-lg rounded-t-3xl sm:rounded-2xl bg-[#13141f] max-h-[85vh] flex flex-col shadow-2xl text-white overflow-hidden">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+                <h3 className="text-base font-bold tracking-wider uppercase text-white">Filter</h3>
+                <div className="flex items-center gap-2">
+                  {activeFilterCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearAllFilters}
+                      className="text-xs font-semibold text-rose-400 hover:text-rose-300 px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20"
+                    >
+                      Reset
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowMobileFilterModal(false)}
+                    className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="overflow-y-auto p-5 space-y-6 flex-1 text-left">
+                {/* STATUS */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2.5">STATUS</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {statusOptions.map((status) => (
                       <button
-                        onClick={() => {
-                          updateSearchParams((params) => {
-                            params.delete("genreId");
-                            params.delete("genre");
-                            params.delete("page");
-                          });
-                        }}
-                        className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800 shadow-[0_2px_0_0_#bae6fd] transition-all hover:-translate-y-px hover:bg-sky-100 dark:border-cyan-500/30 dark:bg-[#0a2d52] dark:text-cyan-100 dark:shadow-[0_2px_0_0_#0ea5e9]"
+                        key={status}
+                        type="button"
+                        onClick={() => setStatusFilter(status)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedStatus === status
+                            ? 'bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20'
+                            : 'bg-[#1e202e] text-gray-300 hover:bg-[#252839]'
+                          }`}
                       >
-                        Clear
+                        {status}
                       </button>
-                    )}
+                    ))}
                   </div>
                 </div>
-                <div className="p-2">
-                  {genresLoading ? (
-                    <div className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
-                      Loading...
-                    </div>
-                  ) : (
-                    genres.map((genre) => (
-                      <label
-                        key={genre.id}
-                        className="flex items-center space-x-2 p-2 hover:bg-gray-100 dark:hover:bg-primary-800 rounded cursor-pointer"
+
+                {/* TIPE / KATEGORI */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2.5">TIPE / KATEGORI</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {typeOptions.map((type) => (
+                      <button
+                        key={type.value}
+                        type="button"
+                        onClick={() => setTypeFilter(type.value)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedType === type.value
+                            ? 'bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20'
+                            : 'bg-[#1e202e] text-gray-300 hover:bg-[#252839]'
+                          }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={selectedGenres.includes(genre.id)}
-                          onChange={() => toggleGenre(genre.id)}
-                          className="w-4 h-4 text-blue-500 rounded focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
-                          {genre.name}
-                        </span>
-                      </label>
-                    ))
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* PROJECT */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2.5">PROJECT</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {projectFilterOptions.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setProjectFilter(opt.value)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedProject === opt.value
+                            ? 'bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20'
+                            : 'bg-[#1e202e] text-gray-300 hover:bg-[#252839]'
+                          }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* SOURCE */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2.5">SOURCE</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {sourceOptions.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setSourceFilter(opt.value)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedSource === opt.value
+                            ? 'bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20'
+                            : 'bg-[#1e202e] text-gray-300 hover:bg-[#252839]'
+                          }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* URUTKAN */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2.5">URUTKAN</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {orderOptions.map((order) => (
+                      <button
+                        key={order}
+                        type="button"
+                        onClick={() => setOrderFilter(order)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedOrder === order
+                            ? 'bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20'
+                            : 'bg-[#1e202e] text-gray-300 hover:bg-[#252839]'
+                          }`}
+                      >
+                        {order}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* GENRE */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2.5">GENRE</h4>
+                  {genresLoading ? (
+                    <p className="text-xs text-gray-500">Memuat genre...</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
+                      {genres.map((genre) => {
+                        const isSelected = selectedGenres.includes(genre.id);
+                        return (
+                          <button
+                            key={genre.id}
+                            type="button"
+                            onClick={() => toggleGenre(genre.id)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${isSelected
+                                ? 'bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20 font-bold'
+                                : 'bg-[#1e202e] text-gray-300 hover:bg-[#252839]'
+                              }`}
+                          >
+                            {genre.name}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Status Dropdown */}
-          <div ref={statusDropdownRef} className="relative">
-            <button
-              onClick={() => setShowStatusDropdown(!showStatusDropdown)}
-              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-800 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_5px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-cyan-200/20 dark:bg-[#0b355f]/95 dark:text-cyan-50 dark:shadow-[0_4px_0_0_rgba(56,189,248,0.35)] dark:hover:shadow-[0_5px_0_0_rgba(56,189,248,0.45)]"
-            >
-              <span className="text-sm font-medium">Status</span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${showStatusDropdown ? "rotate-180" : ""}`}
-              />
-            </button>
-            {showStatusDropdown && (
-              <div className="absolute z-50 mt-2 w-full rounded-xl border border-slate-200/90 bg-white shadow-[0_6px_0_0_#cbd5e1] dark:border-primary-700 dark:bg-primary-900 dark:shadow-[0_6px_0_0_rgba(30,58,138,0.5)]">
-                <div className="p-2">
-                  {statusOptions.map((status) => (
-                    <button
-                      key={status}
-                      onClick={() => {
-                        setStatusFilter(status);
-                        setShowStatusDropdown(false);
-                      }}
-                      className={`mb-1 w-full rounded-lg border px-4 py-2.5 text-left text-sm font-medium transition-all duration-200 last:mb-0 ${
-                        selectedStatus === status
-                          ? "border-sky-500/50 bg-sky-600 font-semibold text-white shadow-[0_3px_0_0_#0369a1] dark:border-cyan-400/40 dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_3px_0_0_#38bdf8]"
-                          : "border-transparent text-gray-700 hover:border-slate-200 hover:bg-slate-50 hover:shadow-[0_2px_0_0_#e2e8f0] dark:text-gray-300 dark:hover:border-primary-600 dark:hover:bg-primary-800 dark:hover:shadow-[0_2px_0_0_#1e3a5f]"
-                      }`}
-                    >
-                      {status}
-                    </button>
-                  ))}
-                </div>
+              {/* Modal Footer (Added extra bottom padding so it sits above BottomNavigation) */}
+              <div className="p-4 pb-20 sm:pb-4 border-t border-white/10 bg-[#141522]">
+                <button
+                  type="button"
+                  onClick={() => setShowMobileFilterModal(false)}
+                  className="w-full py-3 bg-gradient-to-r from-sky-400 to-blue-600 hover:from-sky-500 hover:to-blue-700 text-white font-bold text-sm tracking-wider uppercase rounded-xl transition-all shadow-md shadow-sky-500/20"
+                >
+                  Terapkan Filter
+                </button>
               </div>
-            )}
+            </div>
           </div>
-
-          {/* Project filter (is_project) */}
-          <div ref={projectDropdownRef} className="relative">
-            <button
-              onClick={() => setShowProjectDropdown(!showProjectDropdown)}
-              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-800 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_5px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-cyan-200/20 dark:bg-[#0b355f]/95 dark:text-cyan-50 dark:shadow-[0_4px_0_0_rgba(56,189,248,0.35)] dark:hover:shadow-[0_5px_0_0_rgba(56,189,248,0.45)]"
-            >
-              <span className="text-sm font-medium">Project</span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${showProjectDropdown ? "rotate-180" : ""}`}
-              />
-            </button>
-            {showProjectDropdown && (
-              <div className="absolute z-50 mt-2 w-full rounded-xl border border-slate-200/90 bg-white shadow-[0_6px_0_0_#cbd5e1] dark:border-primary-700 dark:bg-primary-900 dark:shadow-[0_6px_0_0_rgba(30,58,138,0.5)]">
-                <div className="p-2">
-                  {projectFilterOptions.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => {
-                        setProjectFilter(opt.value);
-                        setShowProjectDropdown(false);
-                      }}
-                      className={`mb-1 w-full rounded-lg border px-4 py-2.5 text-left text-sm font-medium transition-all duration-200 last:mb-0 ${
-                        selectedProject === opt.value
-                          ? "border-sky-500/50 bg-sky-600 font-semibold text-white shadow-[0_3px_0_0_#0369a1] dark:border-cyan-400/40 dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_3px_0_0_#38bdf8]"
-                          : "border-transparent text-gray-700 hover:border-slate-200 hover:bg-slate-50 hover:shadow-[0_2px_0_0_#e2e8f0] dark:text-gray-300 dark:hover:border-primary-600 dark:hover:bg-primary-800 dark:hover:shadow-[0_2px_0_0_#1e3a5f]"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Type Dropdown */}
-          <div ref={typeDropdownRef} className="relative">
-            <button
-              onClick={() => setShowTypeDropdown(!showTypeDropdown)}
-              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-800 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_5px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-cyan-200/20 dark:bg-[#0b355f]/95 dark:text-cyan-50 dark:shadow-[0_4px_0_0_rgba(56,189,248,0.35)] dark:hover:shadow-[0_5px_0_0_rgba(56,189,248,0.45)]"
-            >
-              <span className="text-sm font-medium">Type</span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${showTypeDropdown ? "rotate-180" : ""}`}
-              />
-            </button>
-            {showTypeDropdown && (
-              <div className="absolute z-50 mt-2 w-full rounded-xl border border-slate-200/90 bg-white shadow-[0_6px_0_0_#cbd5e1] dark:border-primary-700 dark:bg-primary-900 dark:shadow-[0_6px_0_0_rgba(30,58,138,0.5)]">
-                <div className="p-2">
-                  {typeOptions.map((type) => (
-                    <button
-                      key={type.value}
-                      onClick={() => {
-                        setTypeFilter(type.value);
-                        setShowTypeDropdown(false);
-                      }}
-                      className={`mb-1 w-full rounded-lg border px-4 py-2.5 text-left text-sm font-medium transition-all duration-200 last:mb-0 ${
-                        selectedType === type.value
-                          ? "border-sky-500/50 bg-sky-600 font-semibold text-white shadow-[0_3px_0_0_#0369a1] dark:border-cyan-400/40 dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_3px_0_0_#38bdf8]"
-                          : "border-transparent text-gray-700 hover:border-slate-200 hover:bg-slate-50 hover:shadow-[0_2px_0_0_#e2e8f0] dark:text-gray-300 dark:hover:border-primary-600 dark:hover:bg-primary-800 dark:hover:shadow-[0_2px_0_0_#1e3a5f]"
-                      }`}
-                    >
-                      {type.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Sort By Dropdown */}
-          <div ref={orderDropdownRef} className="relative">
-            <button
-              onClick={() => setShowOrderDropdown(!showOrderDropdown)}
-              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-800 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_5px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-cyan-200/20 dark:bg-[#0b355f]/95 dark:text-cyan-50 dark:shadow-[0_4px_0_0_rgba(56,189,248,0.35)] dark:hover:shadow-[0_5px_0_0_rgba(56,189,248,0.45)]"
-            >
-              <span className="text-sm font-medium">Sort By</span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${showOrderDropdown ? "rotate-180" : ""}`}
-              />
-            </button>
-            {showOrderDropdown && (
-              <div className="absolute z-50 mt-2 w-full rounded-xl border border-slate-200/90 bg-white shadow-[0_6px_0_0_#cbd5e1] dark:border-primary-700 dark:bg-primary-900 dark:shadow-[0_6px_0_0_rgba(30,58,138,0.5)]">
-                <div className="p-2">
-                  {orderOptions.map((order) => (
-                    <button
-                      key={order}
-                      onClick={() => {
-                        setOrderFilter(order);
-                        setShowOrderDropdown(false);
-                      }}
-                      className={`mb-1 w-full rounded-lg border px-4 py-2.5 text-left text-sm font-medium transition-all duration-200 last:mb-0 ${
-                        selectedOrder === order
-                          ? "border-sky-500/50 bg-sky-600 font-semibold text-white shadow-[0_3px_0_0_#0369a1] dark:border-cyan-400/40 dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_3px_0_0_#38bdf8]"
-                          : "border-transparent text-gray-700 hover:border-slate-200 hover:bg-slate-50 hover:shadow-[0_2px_0_0_#e2e8f0] dark:text-gray-300 dark:hover:border-primary-600 dark:hover:bg-primary-800 dark:hover:shadow-[0_2px_0_0_#1e3a5f]"
-                      }`}
-                    >
-                      {order}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
 
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Filters Sidebar - Desktop Only */}
           <div className="hidden lg:block lg:w-80">
             <div className="sticky top-24 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-[0_6px_0_0_#e2e8f0] dark:border-cyan-200/15 dark:bg-primary-900 dark:shadow-[0_6px_0_0_rgba(250,204,21,0.22)]">
+              {/* Clear All button inside header */}
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
                   Filter
                 </h3>
                 <button
                   onClick={clearAllFilters}
-                  className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_3px_0_0_#cbd5e1] transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_4px_0_0_#94a3b8] active:translate-y-px active:shadow-[0_2px_0_0_#cbd5e1] dark:border-cyan-200/25 dark:bg-[#0a2d52] dark:text-cyan-100 dark:shadow-[0_3px_0_0_#38bdf8] dark:hover:shadow-[0_4px_0_0_#60a5fa]"
+                  className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-sky-400 to-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-sky-500/20 transition-all hover:from-sky-500 hover:to-blue-700"
                 >
                   Clear All
                 </button>
@@ -746,14 +745,11 @@ const Content = () => {
                   {statusOptions.map((status) => (
                     <button
                       key={status}
-                      onClick={() => {
-                        setStatusFilter(status);
-                      }}
-                      className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-200 ${
-                        selectedStatus === status
-                          ? "border-sky-500/50 bg-sky-600 text-white shadow-[0_4px_0_0_#0369a1] dark:border-cyan-400/40 dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_4px_0_0_#38bdf8]"
-                          : "border-slate-200 bg-slate-50 text-slate-700 shadow-[0_3px_0_0_#e2e8f0] hover:-translate-y-0.5 hover:shadow-[0_4px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-primary-600 dark:bg-primary-800 dark:text-gray-200 dark:shadow-[0_3px_0_0_#1e3a5f] dark:hover:bg-primary-800"
-                      }`}
+                      onClick={() => setStatusFilter(status)}
+                      className={`rounded-xl px-4 py-2 text-sm font-bold transition-all duration-200 ${selectedStatus === status
+                          ? "bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20"
+                          : "bg-gray-100 dark:bg-primary-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-primary-700"
+                        }`}
                     >
                       {status}
                     </button>
@@ -771,14 +767,33 @@ const Content = () => {
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => {
-                        setProjectFilter(opt.value);
-                      }}
-                      className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-200 ${
-                        selectedProject === opt.value
-                          ? "border-sky-500/50 bg-sky-600 text-white shadow-[0_4px_0_0_#0369a1] dark:border-cyan-400/40 dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_4px_0_0_#38bdf8]"
-                          : "border-slate-200 bg-slate-50 text-slate-700 shadow-[0_3px_0_0_#e2e8f0] hover:-translate-y-0.5 hover:shadow-[0_4px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-primary-600 dark:bg-primary-800 dark:text-gray-200 dark:shadow-[0_3px_0_0_#1e3a5f] dark:hover:bg-primary-800"
-                      }`}
+                      onClick={() => setProjectFilter(opt.value)}
+                      className={`rounded-xl px-4 py-2 text-sm font-bold transition-all duration-200 ${selectedProject === opt.value
+                          ? "bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20"
+                          : "bg-gray-100 dark:bg-primary-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-primary-700"
+                        }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Source Filter */}
+              <div className="mb-6">
+                <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                  Source
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {sourceOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setSourceFilter(opt.value)}
+                      className={`rounded-xl px-4 py-2 text-sm font-bold transition-all duration-200 ${selectedSource === opt.value
+                          ? "bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20"
+                          : "bg-gray-100 dark:bg-primary-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-primary-700"
+                        }`}
                     >
                       {opt.label}
                     </button>
@@ -795,14 +810,11 @@ const Content = () => {
                   {typeOptions.map((type) => (
                     <button
                       key={type.value}
-                      onClick={() => {
-                        setTypeFilter(type.value);
-                      }}
-                      className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-200 ${
-                        selectedType === type.value
-                          ? "border-sky-500/50 bg-sky-600 text-white shadow-[0_4px_0_0_#0369a1] dark:border-cyan-400/40 dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_4px_0_0_#38bdf8]"
-                          : "border-slate-200 bg-slate-50 text-slate-700 shadow-[0_3px_0_0_#e2e8f0] hover:-translate-y-0.5 hover:shadow-[0_4px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-primary-600 dark:bg-primary-800 dark:text-gray-200 dark:shadow-[0_3px_0_0_#1e3a5f] dark:hover:bg-primary-800"
-                      }`}
+                      onClick={() => setTypeFilter(type.value)}
+                      className={`rounded-xl px-4 py-2 text-sm font-bold transition-all duration-200 ${selectedType === type.value
+                          ? "bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20"
+                          : "bg-gray-100 dark:bg-primary-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-primary-700"
+                        }`}
                     >
                       {type.label}
                     </button>
@@ -819,14 +831,11 @@ const Content = () => {
                   {orderOptions.map((order) => (
                     <button
                       key={order}
-                      onClick={() => {
-                        setOrderFilter(order);
-                      }}
-                      className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-200 ${
-                        selectedOrder === order
-                          ? "border-sky-500/50 bg-sky-600 text-white shadow-[0_4px_0_0_#0369a1] dark:border-cyan-400/40 dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_4px_0_0_#38bdf8]"
-                          : "border-slate-200 bg-slate-50 text-slate-700 shadow-[0_3px_0_0_#e2e8f0] hover:-translate-y-0.5 hover:shadow-[0_4px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-primary-600 dark:bg-primary-800 dark:text-gray-200 dark:shadow-[0_3px_0_0_#1e3a5f] dark:hover:bg-primary-800"
-                      }`}
+                      onClick={() => setOrderFilter(order)}
+                      className={`rounded-xl px-4 py-2 text-sm font-bold transition-all duration-200 ${selectedOrder === order
+                          ? "bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-md shadow-sky-500/20"
+                          : "bg-gray-100 dark:bg-primary-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-primary-700"
+                        }`}
                     >
                       {order}
                     </button>
@@ -854,7 +863,7 @@ const Content = () => {
                           type="checkbox"
                           checked={selectedGenres.includes(genre.id)}
                           onChange={() => toggleGenre(genre.id)}
-                          className="w-4 h-4 text-blue-500 rounded focus:ring-blue-500"
+                          className="w-4 h-4 text-sky-500 rounded focus:ring-sky-400"
                         />
                         <span className="text-sm text-gray-700 dark:text-gray-300">
                           {genre.name}
@@ -875,91 +884,107 @@ const Content = () => {
               selectedStatus !== "All" ||
               selectedType !== "All" ||
               selectedOrder !== "Update" ||
-              selectedProject !== "all") && (
-              <div className="mb-6 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-[0_4px_0_0_#e2e8f0] dark:border-primary-700 dark:bg-primary-900 dark:shadow-[0_4px_0_0_rgba(56,189,248,0.18)]">
-                <div className="flex flex-wrap gap-2">
-                  {searchQuery && (
-                    <span className="inline-flex items-center space-x-2 px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-full text-sm">
-                      <span>
-                        Pencarian: {'"'}
-                        {searchQuery}
-                        {'"'}
-                      </span>
-                      <button
-                        onClick={clearSearch}
-                        className="hover:text-blue-900 dark:hover:text-blue-100"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </span>
-                  )}
-                  {selectedGenres.map((genreId) => {
-                    const genre = genres.find((g) => g.id === genreId);
-                    return genre ? (
-                      <span
-                        key={genreId}
-                        className="inline-flex items-center space-x-2 px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-full text-sm"
-                      >
-                        <span>{genre.name}</span>
+              selectedProject !== "all" ||
+              selectedSource !== "all") && (
+                <div className="mb-6 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm dark:border-primary-700 dark:bg-primary-900">
+                  <div className="flex flex-wrap gap-2">
+                    {searchQuery && (
+                      <span className="inline-flex items-center space-x-2 px-3 py-1 bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 rounded-full text-sm font-semibold border border-sky-200 dark:border-sky-900/40">
+                        <span>
+                          Pencarian: {'"'}
+                          {searchQuery}
+                          {'"'}
+                        </span>
                         <button
-                          onClick={() => toggleGenre(genreId)}
-                          className="hover:text-blue-900 dark:hover:text-blue-100"
+                          onClick={clearSearch}
+                          className="hover:text-sky-900 dark:hover:text-sky-100"
                         >
                           <X className="h-4 w-4" />
                         </button>
                       </span>
-                    ) : null;
-                  })}
-                  {selectedStatus !== "All" && (
-                    <span className="inline-flex items-center space-x-2 px-3 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-full text-sm">
-                      <span>Status: {selectedStatus}</span>
-                      <button
-                        onClick={() => setStatusFilter("All")}
-                        className="hover:text-green-900 dark:hover:text-green-100"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </span>
-                  )}
-                  {selectedType !== "All" && (
-                    <span className="inline-flex items-center space-x-2 px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-full text-sm">
-                      <span>Type: {selectedType}</span>
-                      <button
-                        onClick={() => setTypeFilter("All")}
-                        className="hover:text-purple-900 dark:hover:text-purple-100"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </span>
-                  )}
-                  {selectedProject !== "all" && (
-                    <span className="inline-flex items-center space-x-2 px-3 py-1 bg-fuchsia-100 dark:bg-fuchsia-900/40 text-fuchsia-800 dark:text-fuchsia-200 rounded-full text-sm">
-                      <span>
-                        Project:{" "}
-                        {selectedProject === "true" ? "Ya" : "Bukan project"}
+                    )}
+                    {selectedGenres.map((genreId) => {
+                      const genre = genres.find((g) => g.id === genreId);
+                      return genre ? (
+                        <span
+                          key={genreId}
+                          className="inline-flex items-center space-x-2 px-3 py-1 bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 rounded-full text-sm font-semibold border border-sky-200 dark:border-sky-900/40"
+                        >
+                          <span>{genre.name}</span>
+                          <button
+                            onClick={() => toggleGenre(genreId)}
+                            className="hover:text-sky-900 dark:hover:text-sky-100"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </span>
+                      ) : null;
+                    })}
+                    {selectedStatus !== "All" && (
+                      <span className="inline-flex items-center space-x-2 px-3 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-full text-sm">
+                        <span>Status: {selectedStatus}</span>
+                        <button
+                          onClick={() => setStatusFilter("All")}
+                          className="hover:text-green-900 dark:hover:text-green-100"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
                       </span>
-                      <button
-                        onClick={() => setProjectFilter("all")}
-                        className="hover:text-fuchsia-950 dark:hover:text-fuchsia-50"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </span>
-                  )}
-                  {selectedOrder !== "Update" && (
-                    <span className="inline-flex items-center space-x-2 px-3 py-1 bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300 rounded-full text-sm">
-                      <span>Order: {selectedOrder}</span>
-                      <button
-                        onClick={() => setOrderFilter("Update")}
-                        className="hover:text-orange-900 dark:hover:text-orange-100"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </span>
-                  )}
+                    )}
+                    {selectedType !== "All" && (
+                      <span className="inline-flex items-center space-x-2 px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-full text-sm">
+                        <span>Type: {selectedType}</span>
+                        <button
+                          onClick={() => setTypeFilter("All")}
+                          className="hover:text-purple-900 dark:hover:text-purple-100"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </span>
+                    )}
+                    {selectedProject !== "all" && (
+                      <span className="inline-flex items-center space-x-2 px-3 py-1 bg-fuchsia-100 dark:bg-fuchsia-900/40 text-fuchsia-800 dark:text-fuchsia-200 rounded-full text-sm">
+                        <span>
+                          Project:{" "}
+                          {selectedProject === "true" ? "Ya" : "Bukan project"}
+                        </span>
+                        <button
+                          onClick={() => setProjectFilter("all")}
+                          className="hover:text-fuchsia-950 dark:hover:text-fuchsia-50"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </span>
+                    )}
+                    {selectedSource !== "all" && (
+                      <span className="inline-flex items-center space-x-2 px-3 py-1 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 rounded-full text-sm">
+                        <span>
+                          Source:{" "}
+                          {sourceOptions.find((opt) => opt.value === selectedSource)?.label ||
+                            selectedSource}
+                        </span>
+                        <button
+                          onClick={() => setSourceFilter("all")}
+                          className="hover:text-amber-950 dark:hover:text-amber-50"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </span>
+                    )}
+                    {selectedOrder !== "Update" && (
+                      <span className="inline-flex items-center space-x-2 px-3 py-1 bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300 rounded-full text-sm">
+                        <span>Order: {selectedOrder}</span>
+                        <button
+                          onClick={() => setOrderFilter("Update")}
+                          className="hover:text-orange-900 dark:hover:text-orange-100"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {/* Loading State */}
             {loading ? (
@@ -977,112 +1002,143 @@ const Content = () => {
               </div>
             ) : (
               <>
-                {/* Manga Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 mb-8">
-                  {mangaList.map((manga) => (
-                    <div
-                      key={manga.id}
-                      onClick={() => navigate(`/komik/${manga.slug}`)}
-                      className="bg-white dark:bg-white/[0.06] dark:border dark:border-white/10 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer"
-                    >
-                      {/* Cover Image */}
-                      <div className="relative aspect-[3/4] overflow-hidden">
-                        <LazyImage
-                          src={getImageUrl(manga.cover)}
-                          alt={manga.title}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                          wrapperClassName="w-full h-full"
-                        />
-
-                        {/* Gradient Overlay */}
-                        {/* <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" /> */}
-
-                        {/* Country Flag */}
-                        {/* <div className="absolute top-2 right-2 text-2xl bg-white/90 dark:bg-primary-900/90 rounded-full w-8 h-8 flex items-center justify-center shadow-lg">
-                          {countryFlags[manga.country_id] || "🌍"}
-                        </div> */}
-
-                        {/* Color Badge */}
-                        {/* {manga.color && (
-                          <div className="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded-md text-xs font-bold flex items-center space-x-1">
-                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14a6 6 0 110-12 6 6 0 010 12z"/>
-                            </svg>
-                            <span className="block text-[10px] md:text-sm">
-                              COLOR
-                            </span>
-                          </div>
-                        )} */}
-
-                        {/* Rating Badge */}
-                        {manga.rating > 0 && (
-                          <div className="absolute top-2 left-2 h-8 w-8 rounded-full bg-yellow-500/95 text-white shadow-lg backdrop-blur-sm flex items-center justify-center">
-                            <span className="text-[11px] font-bold leading-none">
-                              {Number(manga.rating).toFixed(1)}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Hot Badge */}
-                        {/* {manga.hot && (
-                          <div className="absolute bottom-2 left-2 bg-red-500/90 backdrop-blur-sm rounded-full px-2 py-1">
-                            <span className="text-white text-xs font-bold">HOT</span>
-                          </div>
-                        )} */}
-                      </div>
-
-                      {/* Info Section */}
-                      <div className="p-3 flex flex-col h-[192px]">
-                        {/* Title */}
-                        {!!manga.hot && (
-                          <div className="mb-1 max-w-fit bg-red-500/90 backdrop-blur-sm rounded-full px-2 py-1">
-                            <span className="text-white text-xs font-bold">
-                              HOT
-                            </span>
-                          </div>
-                        )}
-                        <div className="min-h-[2.75rem] md:min-h-[3rem] mb-2 flex items-center">
-                          <Link
-                            to={`/komik/${manga.slug}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="block w-full"
-                          >
-                            <h3 className="font-bold text-xs md:text-sm line-clamp-2 text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                              {manga.title}
-                            </h3>
-                          </Link>
+                {/* Manga Grid / List View */}
+                {viewMode === "list" ? (
+                  <div className="flex flex-col gap-3 mb-8">
+                    {mangaList.map((manga) => (
+                      <div
+                        key={manga.id}
+                        onClick={() => navigate(`/komik/${manga.slug}`)}
+                        className="bg-white dark:bg-white/[0.06] dark:border dark:border-white/10 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden flex gap-3.5 p-3 cursor-pointer group"
+                      >
+                        {/* Cover Image */}
+                        <div className="relative w-24 sm:w-28 aspect-[3/4] shrink-0 overflow-hidden rounded-lg">
+                          <LazyImage
+                            src={getImageUrl(manga.cover)}
+                            alt={manga.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            wrapperClassName="w-full h-full"
+                          />
+                          {manga.rating > 0 && (
+                            <div className="absolute top-1.5 left-1.5 h-6 w-6 rounded-full bg-yellow-500/95 text-white shadow backdrop-blur-sm flex items-center justify-center">
+                              <span className="text-[10px] font-bold leading-none">
+                                {Number(manga.rating).toFixed(1)}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
-                        {manga.lastChapters?.length > 0 ? (
-                          <div className="space-y-2 mb-1 mt-auto">
-                            {manga.lastChapters.slice(0, 3).map((chapter) => (
-                              <Link
-                                key={chapter.slug}
-                                to={`/view/${chapter.slug}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="w-full flex items-center justify-between rounded-lg border-l-2 border-blue-500 bg-gray-100 dark:bg-primary-800/70 px-2.5 py-2 text-xs text-left text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-primary-700 transition-colors"
-                              >
-                                <span className="text-xs md:text-sm font-semibold flex items-center gap-1">
-                                  <span>Chapter</span>
-                                  <span>{chapter.number || "N/A"}</span>
-                                </span>
-                                {getChapterTimeAgo(chapter) && (
-                                  <span className="text-[11px] md:text-xs text-gray-500 dark:text-gray-400">
-                                    {getChapterTimeAgo(chapter)}
-                                  </span>
-                                )}
-                              </Link>
-                            ))}
+                        {/* Info Section */}
+                        <div className="flex-1 flex flex-col justify-between py-0.5 min-w-0">
+                          <div>
+                            {!!manga.hot && (
+                              <div className="mb-1 inline-block bg-red-500/90 backdrop-blur-sm rounded-full px-2 py-0.5">
+                                <span className="text-white text-[10px] font-bold">HOT</span>
+                              </div>
+                            )}
+                            <Link
+                              to={`/komik/${manga.slug}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="block"
+                            >
+                              <h3 className="font-bold text-sm md:text-base line-clamp-2 text-gray-900 dark:text-gray-100 group-hover:text-blue-500 transition-colors">
+                                {manga.title}
+                              </h3>
+                            </Link>
                           </div>
-                        ) : (
-                          <div className="text-xs text-gray-500 dark:text-gray-500 mb-1 mt-auto">
-                            Chapter N/A
-                          </div>
-                        )}
+
+                          {manga.lastChapters?.length > 0 ? (
+                            <div className="space-y-1.5 mt-2">
+                              {manga.lastChapters.slice(0, 2).map((chapter) => (
+                                <ChapterAccessLink
+                                  key={chapter.slug}
+                                  chapter={chapter}
+                                  to={`/view/${chapter.slug}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  label={`Chapter ${chapter.number || "N/A"}`}
+                                  meta={getChapterTimeAgo(chapter) || null}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">Chapter N/A</div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 mb-8">
+                    {mangaList.map((manga) => (
+                      <div
+                        key={manga.id}
+                        onClick={() => navigate(`/komik/${manga.slug}`)}
+                        className="bg-white dark:bg-white/[0.06] dark:border dark:border-white/10 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer"
+                      >
+                        {/* Cover Image */}
+                        <div className="relative aspect-[3/4] overflow-hidden">
+                          <LazyImage
+                            src={getImageUrl(manga.cover)}
+                            alt={manga.title}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                            wrapperClassName="w-full h-full"
+                          />
+
+                          {/* Rating Badge */}
+                          {/* {manga.rating > 0 && (
+                            <div className="absolute top-2 left-2 h-8 w-8 rounded-full bg-yellow-500/95 text-white shadow-lg backdrop-blur-sm flex items-center justify-center">
+                              <span className="text-[11px] font-bold leading-none">
+                                {Number(manga.rating).toFixed(1)}
+                              </span>
+                            </div>
+                          )} */}
+                        </div>
+
+                        {/* Info Section */}
+                        <div className="p-3 flex flex-col h-[192px]">
+                          {/* Title */}
+                          {!!manga.hot && (
+                            <div className="mb-1 max-w-fit bg-red-500/90 backdrop-blur-sm rounded-full px-2 py-1">
+                              <span className="text-white text-xs font-bold">
+                                HOT
+                              </span>
+                            </div>
+                          )}
+                          <div className="min-h-[2.75rem] md:min-h-[3rem] mb-2 flex items-center">
+                            <Link
+                              to={`/komik/${manga.slug}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="block w-full"
+                            >
+                              <h3 className="font-bold text-xs md:text-sm line-clamp-2 text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                                {manga.title}
+                              </h3>
+                            </Link>
+                          </div>
+
+                          {manga.lastChapters?.length > 0 ? (
+                            <div className="space-y-2 mb-1 mt-auto">
+                              {manga.lastChapters.slice(0, 3).map((chapter) => (
+                                <ChapterAccessLink
+                                  key={chapter.slug}
+                                  chapter={chapter}
+                                  to={`/view/${chapter.slug}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  label={`Chapter ${chapter.number || "N/A"}`}
+                                  meta={getChapterTimeAgo(chapter) || null}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-gray-500 dark:text-gray-500 mb-1 mt-auto">
+                              Chapter N/A
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Pagination */}
                 <div className="flex justify-center items-center space-x-2 pb-8 md:pb-4">
@@ -1095,7 +1151,6 @@ const Content = () => {
                       ads={comicFooterAds}
                       layout="grid"
                       columns={2}
-                      className="gap-4"
                     />
                   </div>
                 )}
@@ -1104,7 +1159,7 @@ const Content = () => {
           </div>
         </div>
       </div>
-      {/* <LiveChatWidget /> */}
+      <LiveChatWidget />
     </div>
   );
 };

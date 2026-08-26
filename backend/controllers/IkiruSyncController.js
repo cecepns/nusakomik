@@ -9,10 +9,12 @@ const {
   clearIkiruCloudflareCookiesFile,
 } = require('../utils/ikiruCloudflareCookiesFile');
 const { uploadUrlToS3 } = require('../utils/s3Upload');
+const { refreshMangaChapterActivity } = require('../utils/chapterRelease');
+const { invalidateContentsCaches } = require('./ContentsController');
 const path = require('path');
 
-const BASE_URL = 'https://04.ikiru.wtf';
-const SOURCE = 'ikiru';
+const BASE_URL = 'https://v6.kiryuu.to';
+const SOURCE = 'kiryu';
 const MANGA_PATH_REGEX = /\/manga\/([^/?#]+)/i;
 
 let _categoriesCache = null;
@@ -134,11 +136,23 @@ async function upsertMangaGenres(mangaId, genreSlugs) {
   const slugs = Array.from(
     new Set((genreSlugs || []).map((s) => String(s || '').toLowerCase()).filter(Boolean))
   );
-  if (!slugs.length) return { matched: 0, inserted: 0 };
+  if (!slugs.length) {
+    await db.execute('DELETE FROM manga_genres WHERE manga_id = ?', [mangaId]);
+    return { matched: 0, inserted: 0 };
+  }
 
   const slugToId = await getCategorySlugToIdMap();
   const categoryIds = slugs.map((s) => slugToId.get(s)).filter(Boolean);
-  if (!categoryIds.length) return { matched: 0, inserted: 0 };
+  if (!categoryIds.length) {
+    await db.execute('DELETE FROM manga_genres WHERE manga_id = ?', [mangaId]);
+    return { matched: 0, inserted: 0 };
+  }
+
+  // Delete genres that are not in the new list for this manga
+  await db.execute(
+    `DELETE FROM manga_genres WHERE manga_id = ? AND category_id NOT IN (${categoryIds.join(',')})`,
+    [mangaId]
+  );
 
   let inserted = 0;
   for (const categoryId of categoryIds) {
@@ -267,7 +281,7 @@ function buildPagedUrl(basePath, page) {
 }
 
 async function scrapeLatestFeed({ page } = {}) {
-  const url = buildPagedUrl('/latest-update/', page);
+  const url = buildPagedUrl('/latest/', page);
   const $ = await fetchHtml(url);
   const mangaMap = new Map();
 
@@ -559,11 +573,14 @@ async function getMangaBySlugLocal(slug) {
   return rows[0] || null;
 }
 
-async function upsertMangaFromIkiru(detail, { saveToS3 = false } = {}) {
+async function upsertMangaFromIkiru(detail, { saveToS3 = true } = {}) {
   const existing = await getMangaBySlugLocal(detail.slug);
   if (existing) {
     if (!existing.is_input_manual) {
       await db.execute('UPDATE manga SET is_input_manual = TRUE WHERE id = ?', [existing.id]);
+    }
+    if (existing.source !== SOURCE) {
+      await db.execute('UPDATE manga SET source = ? WHERE id = ?', [SOURCE, existing.id]);
     }
     if (Array.isArray(detail.genres) && detail.genres.length) {
       await upsertMangaGenres(existing.id, detail.genres);
@@ -678,8 +695,8 @@ async function upsertMangaFromIkiru(detail, { saveToS3 = false } = {}) {
       null,
       'ongoing',
       detail.rating != null &&
-      Number.isFinite(Number(detail.rating)) &&
-      Number(detail.rating) > 0
+        Number.isFinite(Number(detail.rating)) &&
+        Number(detail.rating) > 0
         ? Number(detail.rating)
         : null,
       false,
@@ -725,6 +742,11 @@ async function insertChaptersIfMissing(manga, ikiruChapters, { mode }) {
     );
     inserted += 1;
     insertedSlugs.push(localSlug);
+  }
+
+  if (inserted > 0) {
+    await refreshMangaChapterActivity(db, manga.id);
+    invalidateContentsCaches();
   }
 
   return { inserted, skipped, insertedSlugs };
@@ -782,7 +804,7 @@ function normalizeImageUrlForCompare(url) {
   }
 }
 
-async function upsertChapterImages(chapterId, imageUrls, { saveToS3 = false } = {}) {
+async function upsertChapterImages(chapterId, imageUrls, { saveToS3 = true } = {}) {
   const [existingRows] = await db.execute(
     'SELECT image_path, page_number FROM chapter_images WHERE chapter_id = ?',
     [chapterId]
@@ -991,6 +1013,8 @@ async function upsertChapterFromIkiru(mangaId, mangaSlug, ch) {
       'UPDATE chapters SET manga_id = ?, title = ?, chapter_number = ? WHERE id = ?',
       [mangaId, chapterTitle, chapterNumber, row.id]
     );
+    await refreshMangaChapterActivity(db, mangaId);
+    invalidateContentsCaches();
     return { chapterId: row.id, created: false, slug: localSlug };
   }
 
@@ -998,6 +1022,9 @@ async function upsertChapterFromIkiru(mangaId, mangaSlug, ch) {
     'INSERT INTO chapters (manga_id, title, chapter_number, slug, cover) VALUES (?, ?, ?, ?, ?)',
     [mangaId, chapterTitle, chapterNumber, localSlug, null]
   );
+
+  await refreshMangaChapterActivity(db, mangaId);
+  invalidateContentsCaches();
 
   return { chapterId: result.insertId, created: true, slug: localSlug };
 }
@@ -1019,7 +1046,7 @@ const syncSelected = async (req, res) => {
     const mode = req.body?.mode === 'full' ? 'full' : 'delta';
     const withImages = parseBooleanFlag(req.body?.withImages, false);
     // New param: default false => store Ikiru URL directly (no download/upload to S3).
-    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, false);
+    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, true);
 
     const summary = {
       requested: uniqueSlugs.length,
@@ -1102,7 +1129,7 @@ const syncSelected = async (req, res) => {
 const syncLatest = async (req, res) => {
   try {
     const mode = req.body?.mode === 'full' ? 'full' : 'delta';
-    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, false);
+    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, true);
     const feed = await scrapeLatestFeed({ page: 1 });
     const { summary, results } = await syncFeed(feed, { mode, saveToS3 });
     res.json({ status: true, mode, source: SOURCE, summary, results });
@@ -1114,7 +1141,7 @@ const syncLatest = async (req, res) => {
 const syncProject = async (req, res) => {
   try {
     const mode = req.body?.mode === 'full' ? 'full' : 'delta';
-    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, false);
+    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, true);
     const feed = await scrapeProjectFeed({ page: 1 });
     const { summary, results } = await syncFeed(feed, { mode, saveToS3 });
     res.json({ status: true, mode, source: SOURCE, summary, results });
@@ -1242,7 +1269,7 @@ const syncMangaBySlug = async (req, res) => {
     }
 
     const mode = req.body?.mode === 'full' ? 'full' : 'delta';
-    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, false);
+    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, true);
     const detail = await scrapeMangaDetail(slug, { baseUrl: target.baseUrl });
     const local = await getMangaBySlugLocal(slug);
 
@@ -1295,7 +1322,7 @@ const syncMangaInit = async (req, res) => {
 
     const mode = req.body?.mode === 'full' ? 'full' : 'delta';
     const withImages = parseBooleanFlag(req.body?.withImages, false);
-    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, false);
+    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, true);
 
     const detail = await scrapeMangaDetail(slug, { baseUrl: target.baseUrl });
     const mangaUpsert = await upsertMangaFromIkiru(detail, { saveToS3 });
@@ -1423,7 +1450,7 @@ const syncMangaChapter = async (req, res) => {
     }
 
     const withImages = parseBooleanFlag(req.body?.withImages, false);
-    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, false);
+    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, true);
 
     let localManga = await getMangaBySlugLocal(slug);
     let detail = null;
@@ -1516,7 +1543,7 @@ const syncChapterImages = async (req, res) => {
       return res.status(400).json({ status: false, error: 'Slug manga tidak valid' });
     }
 
-    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, false);
+    const saveToS3 = parseBooleanFlag(req.body?.saveToS3, true);
     const localChapterSlug = buildLocalChapterSlug(slug, chapterSlug);
     const chapterId = await findLocalChapterIdBySlug(localChapterSlug);
     if (!chapterId) {

@@ -5,11 +5,14 @@
 
 // export const API_BASE_URL = 'https://be-api-node.komiknesia.net//api';
 // export const API_BASE_URL_WITHOUT_API = 'https://be-api-node.komiknesia.net/';
-export const API_BASE_URL = 'https://api-be.nusakomik.com/api';
-export const API_BASE_URL_WITHOUT_API = 'https://api-be.nusakomik.com/';
+export const API_BASE_URL = 'https://api-be.komiknesia.my.id/api';
+export const API_BASE_URL_WITHOUT_API = 'https://api-be.komiknesia.my.id/';
 
 /** Origin for static files (no trailing slash). Same host as API, path /uploads is served by backend. */
 const STATIC_ORIGIN = API_BASE_URL_WITHOUT_API.replace(/\/+$/, '');
+
+/** CDN Ikiru — butuh header access-code; browser langsung ke host ini dapat promo-ikiru.webp */
+const IKIRU_CDN_HOSTS = new Set(['cdn.itachi.my.id', 'yuucdn.com', 'www.yuucdn.com']);
 
 /**
  * Map legacy /uploads-komiknesia/... to public /uploads/... (Express serves disk folder at /uploads).
@@ -22,6 +25,43 @@ function normalizeUploadsPathname(pathname) {
   return pathname;
 }
 
+function isIkiruCdnUrl(url) {
+  try {
+    const u = new URL(url);
+    return IKIRU_CDN_HOSTS.has(u.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+export function toProxiedImageUrlIfNeeded(imagePath) {
+  if (!imagePath) return imagePath;
+  try {
+    const u = new URL(imagePath);
+    const host = u.hostname.toLowerCase();
+    if (host === 'yuucdn.com' || host === 'www.yuucdn.com') {
+      return `https://proxy.cdnesia.my.id/?url=${encodeURIComponent(imagePath)}`;
+    }
+    if (host === 'cdnap.site' || host === 'www.cdnap.site') {
+      return `${API_BASE_URL}/image-proxy?url=${encodeURIComponent(imagePath)}`;
+    }
+  } catch (e) {
+    /* ignore */
+  }
+  return imagePath;
+}
+
+let currentCdnDomain = 'https://data.cdnesia.my.id';
+
+export const setCdnDomain = (domain) => {
+  if (!domain) return;
+  let d = String(domain).trim().replace(/\/+$/, '');
+  if (!d.startsWith('http://') && !d.startsWith('https://')) {
+    d = `https://${d}`;
+  }
+  currentCdnDomain = d;
+};
+
 /**
  * Get full image URL with endpoint prefix if the path is relative
  * @param {string} imagePath - Image path (can be relative like "/uploads/..." or absolute URL)
@@ -32,9 +72,16 @@ export const getImageUrl = (imagePath) => {
 
   let path = typeof imagePath === 'string' ? imagePath.replace(/\\\//g, '/').trim() : String(imagePath);
 
+  if (path.startsWith('data:')) {
+    return path;
+  }
+
   if (path.startsWith('http://') || path.startsWith('https://')) {
     try {
       const u = new URL(path);
+      const proxied = toProxiedImageUrlIfNeeded(u.toString());
+      if (proxied !== u.toString()) return proxied;
+
       const next = normalizeUploadsPathname(u.pathname);
       if (next !== u.pathname) {
         u.pathname = next;
@@ -43,21 +90,32 @@ export const getImageUrl = (imagePath) => {
     } catch {
       /* ignore */
     }
-    return path;
+    return toProxiedImageUrlIfNeeded(path) || path;
   }
 
-  if (path.startsWith('uploads/')) {
-    path = `/${path}`;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const normalizedPath = normalizeUploadsPathname(cleanPath);
+
+  // If path is specifically for hero banners (e.g. banners/banner_xxx.png or /banners/...)
+  if (normalizedPath.startsWith('/banners/') || path.startsWith('banners/')) {
+    return `${currentCdnDomain}${normalizedPath}`;
   }
 
-  if (path.startsWith('/')) {
-    return `${STATIC_ORIGIN}${normalizeUploadsPathname(path)}`;
-  }
-
-  return path;
+  // All other relative upload assets (ads, avatars, profiles, etc.) serve from backend server
+  return `${STATIC_ORIGIN}${normalizedPath}`;
 };
 
 class APIClient {
+  getDeviceId() {
+    const key = 'device_id';
+    let deviceId = localStorage.getItem(key);
+    if (deviceId && /^[a-zA-Z0-9_-]{8,40}$/.test(deviceId)) return deviceId;
+
+    deviceId = `dv_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-6)}`;
+    localStorage.setItem(key, deviceId);
+    return deviceId;
+  }
+
   getAuthToken() {
     return localStorage.getItem('auth_token');
   }
@@ -70,10 +128,19 @@ class APIClient {
     }
   }
 
+  getTurnstileToken() {
+    try {
+      return sessionStorage.getItem('cf_turnstile_passed') || localStorage.getItem('cf_turnstile_passed');
+    } catch {
+      return null;
+    }
+  }
+
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
     const isFormData = options.body instanceof FormData;
     const token = this.getAuthToken();
+    const turnstileToken = this.getTurnstileToken();
     const isAuthAnonymous =
       endpoint === '/auth/login' ||
       endpoint.startsWith('/auth/login?') ||
@@ -85,13 +152,15 @@ class APIClient {
       ...options.headers,
       // Don't set Content-Type for FormData - browser will set it with boundary
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      'X-Device-Id': this.getDeviceId(),
+      ...(turnstileToken ? { 'x-turnstile-token': turnstileToken } : {}),
     };
 
     // Always add auth token if available (this will override any Authorization in options.headers)
     if (token && !isAuthAnonymous) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    
+
     const config = {
       ...options,
       headers,
@@ -105,7 +174,21 @@ class APIClient {
       const response = await fetch(url, config);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+
+        // Jika token Turnstile expired/invalid, hapus cache storage & minta verifikasi ulang
+        if (response.status === 403 && typeof errorData.error === 'string' && (errorData.error.toLowerCase().includes('turnstile') || errorData.error.toLowerCase().includes('verification'))) {
+          try {
+            sessionStorage.removeItem('cf_turnstile_passed');
+            localStorage.removeItem('cf_turnstile_passed');
+            window.dispatchEvent(new CustomEvent('turnstile-expired'));
+          } catch {
+            // ignore
+          }
+        }
+
+        const err = new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        err.status = response.status;
+        throw err;
       }
       return await response.json();
     } catch (error) {
@@ -208,6 +291,60 @@ class APIClient {
       method: 'PATCH',
       body: { payment_status },
     });
+  }
+
+  async uploadBannerImage(formData) {
+    const token = this.getAuthToken();
+    const turnstileToken = this.getTurnstileToken();
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (turnstileToken) {
+      headers['x-turnstile-token'] = turnstileToken;
+    }
+    const response = await fetch(`${API_BASE_URL}/settings/upload-banner`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || errData.message || 'Upload banner gagal');
+    }
+    return await response.json();
+  }
+
+  async uploadImage(formData) {
+    const token = this.getAuthToken();
+    const turnstileToken = this.getTurnstileToken();
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (turnstileToken) {
+      headers['x-turnstile-token'] = turnstileToken;
+    }
+    // Attempt uploading to backend upload endpoint
+    const response = await fetch(`${API_BASE_URL}/comments/upload-image`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      // Fallback endpoint if comments/upload-image is at /upload
+      const fallbackResponse = await fetch(`${API_BASE_URL}/upload-image`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+      if (!fallbackResponse.ok) {
+        const errData = await fallbackResponse.json().catch(() => ({}));
+        throw new Error(errData.error || errData.message || 'Upload gambar gagal');
+      }
+      return await fallbackResponse.json();
+    }
+    return await response.json();
   }
 
   deleteAdminPremiumOrder(id) {
@@ -474,6 +611,13 @@ class APIClient {
     return this.request(`/manga/${mangaId}/chapters`);
   }
 
+  getChapterSchedule(weekOffset = 0) {
+    const params = new URLSearchParams();
+    if (weekOffset) params.set('week', String(weekOffset));
+    const qs = params.toString();
+    return this.request(`/chapters/schedule${qs ? `?${qs}` : ''}`);
+  }
+
   createChapter(mangaId, formData) {
     return this.request(`/manga/${mangaId}/chapters`, {
       method: 'POST',
@@ -606,6 +750,67 @@ class APIClient {
     );
   }
 
+  // Admin: Apkomik sync
+  syncApkomikLatest(type = 'manga', body = {}) {
+    return this.request('/admin/apkomik-sync/latest', {
+      method: 'POST',
+      body: { type, ...body },
+    });
+  }
+
+  getApkomikSyncFeed(type = 'manga', page = 1) {
+    const params = new URLSearchParams({
+      type: String(type || 'manga'),
+      page: String(page || 1),
+    });
+    return this.request(`/admin/apkomik-sync/feed?${params.toString()}`);
+  }
+
+  syncApkomikSelected(slugs, body = {}) {
+    return this.request('/admin/apkomik-sync/selected', {
+      method: 'POST',
+      body: { slugs, ...body },
+    });
+  }
+
+  syncApkomikManga(slug, body = {}) {
+    return this.request(`/admin/apkomik-sync/manga/${encodeURIComponent(slug)}`, {
+      method: 'POST',
+      body,
+    });
+  }
+
+  syncApkomikMangaInit(slug, body = {}) {
+    return this.request(`/admin/apkomik-sync/manga/${encodeURIComponent(slug)}/init`, {
+      method: 'POST',
+      body,
+    });
+  }
+
+  syncApkomikChapter(slug, chapterSlug, body = {}) {
+    return this.request(
+      `/admin/apkomik-sync/manga/${encodeURIComponent(slug)}/chapter/${encodeURIComponent(
+        chapterSlug
+      )}`,
+      {
+        method: 'POST',
+        body,
+      }
+    );
+  }
+
+  syncApkomikChapterImages(mangaSlug, chapterSlug, body = {}) {
+    return this.request(
+      `/admin/apkomik-sync/manga/${encodeURIComponent(mangaSlug)}/chapter/${encodeURIComponent(
+        chapterSlug
+      )}/images`,
+      {
+        method: 'POST',
+        body,
+      }
+    );
+  }
+
   // Ads
   getAds() {
     return this.request('/ads');
@@ -663,12 +868,12 @@ class APIClient {
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream',
       };
-      
+
       // Add auth token if available
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      
+
       fetch(url, {
         method: 'POST',
         headers,
@@ -679,12 +884,12 @@ class APIClient {
             const errorData = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
             throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
           }
-          
+
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
           let currentEvent = '';
-          
+
           try {
             while (true) {
               const { done, value } = await reader.read();
@@ -705,25 +910,25 @@ class APIClient {
                 }
                 break;
               }
-              
+
               buffer += decoder.decode(value, { stream: true });
               const lines = buffer.split('\n');
               buffer = lines.pop() || '';
-              
+
               for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
-                
+
                 if (line.startsWith('event: ')) {
                   currentEvent = line.substring(7).trim();
                 } else if (line.startsWith('data: ')) {
                   try {
                     const data = JSON.parse(line.substring(6));
-                    
+
                     // Call progress callback
                     if (onProgress) {
                       onProgress(data);
                     }
-                    
+
                     // Check for completion or error
                     if (currentEvent === 'complete') {
                       // Call progress one more time with final data
@@ -757,7 +962,7 @@ class APIClient {
                 }
               }
             }
-            
+
             // If we reach here without resolve/reject, resolve with last data
             resolve({ message: 'Sync completed' });
           } catch (streamError) {
@@ -852,6 +1057,14 @@ class APIClient {
     return this.request(`/featured-items${queryString ? `?${queryString}` : ''}`);
   }
 
+  searchFeaturedManga(query, limit = 50) {
+    const params = new URLSearchParams({
+      q: query,
+      limit: String(limit),
+    });
+    return this.request(`/featured-items/search?${params}`);
+  }
+
   createFeaturedItem(data) {
     return this.request('/featured-items', {
       method: 'POST',
@@ -916,56 +1129,80 @@ class APIClient {
     if (params.status) queryParams.append('status', params.status);
     if (params.country) queryParams.append('country', params.country);
     if (params.type) queryParams.append('type', params.type);
+    if (params.type_id) queryParams.append('type_id', params.type_id.toString());
     if (params.orderBy) queryParams.append('orderBy', params.orderBy);
     if (params.project) queryParams.append('project', params.project);
     if (params.popularWindow) queryParams.append('popularWindow', params.popularWindow);
-    
+
     const queryString = queryParams.toString();
     return this.request(`/contents${queryString ? `?${queryString}` : ''}`);
+  }
+
+  // R2 Manga Migration
+  getMigrationManga(params = {}) {
+    const queryParams = new URLSearchParams();
+    if (params.page) queryParams.append('page', params.page.toString());
+    if (params.limit) queryParams.append('limit', params.limit.toString());
+    if (params.search) queryParams.append('search', params.search);
+    if (params.status) queryParams.append('status', params.status);
+    const queryString = queryParams.toString();
+    return this.request(`/admin/migration/manga${queryString ? `?${queryString}` : ''}`);
+  }
+
+  startMigration(mangaIds) {
+    return this.request('/admin/migration/start', {
+      method: 'POST',
+      body: JSON.stringify({ mangaIds }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  getMigrationStatus(taskId) {
+    return this.request(`/admin/migration/status/${taskId}`);
+  }
+
+  abortMigration(taskId) {
+    return this.request(`/admin/migration/abort/${taskId}`, {
+      method: 'POST',
+    });
   }
 }
 
 export const apiClient = new APIClient();
 
-export const fetchComicDetail = async (slug) => {
+export function safeParseDate(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : value;
+  }
+
+  const s = String(value).trim();
+  if (!s) return null;
+
+  // Handles "YYYY-MM-DD HH:mm:ss" -> replace space with 'T'
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) {
+    const d = new Date(s.replace(' ', 'T'));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+export function formatToLocaleString(value, isDateOnly = false) {
+  const d = safeParseDate(value);
+  if (!d) return '-';
+  return isDateOnly ? d.toLocaleDateString('id-ID') : d.toLocaleString('id-ID');
+}
+
+export function formatToInputString(value) {
+  const d = safeParseDate(value);
+  if (!d) return '';
   try {
-    const response = await fetch(`${API_BASE_URL}/comic/${slug}`);
-    if (response.ok) {
-      const result = await response.json();
-      if (result.status && result.data && result.data.is_project) {
-        return result;
-      }
-    }
-  } catch (err) {
-    console.warn("Failed local fetch for comic:", slug, err);
+    return d.toISOString().slice(0, 16);
+  } catch {
+    return '';
   }
-
-  // Fallback to komiknesia API
-  const response = await fetch(`https://api-be.komiknesia.my.id/api/comic/${slug}`);
-  if (!response.ok) {
-    throw new Error('Manga tidak ditemukan');
-  }
-  return response.json();
-};
-
-export const fetchChapterDetail = async (chapterSlug, token) => {
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  try {
-    const response = await fetch(`${API_BASE_URL}/chapters/slug/${chapterSlug}`, { headers });
-    if (response.ok) {
-      const result = await response.json();
-      if (result.status && result.data && result.data.content && result.data.content.is_project) {
-        return result;
-      }
-    }
-  } catch (err) {
-    console.warn("Failed local fetch for chapter:", chapterSlug, err);
-  }
-
-  // Fallback to komiknesia API
-  const response = await fetch(`https://api-be.komiknesia.my.id/api/chapters/slug/${chapterSlug}`, { headers });
-  if (!response.ok) {
-    throw new Error('Chapter tidak ditemukan');
-  }
-  return response.json();
-};
+}

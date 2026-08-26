@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.750.0",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.5.17",
     "axios": "^1.7.9",
     "axios-cookiejar-support": "^5.0.5",
     "bcryptjs": "^3.0.3",
@@ -24,7 +24,8 @@
     "mysql2": "^3.6.5",
     "puppeteer": "^24.41.0",
     "socket.io": "^4.8.3",
-    "tough-cookie": "^5.1.2"
+    "tough-cookie": "^5.1.2",
+    "https-proxy-agent": "^7.0.6"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

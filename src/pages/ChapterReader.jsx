@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import {
@@ -8,9 +8,8 @@ import {
   ChevronRight,
   List,
   X,
+  ChevronUp,
   ChevronDown,
-  ArrowUp,
-  ArrowDown,
   Play,
   Pause,
   Sparkles,
@@ -21,7 +20,12 @@ import {
   Copy,
   Heart,
   AlertTriangle,
-  Lock,
+  Settings,
+  Download,
+  MessageSquare,
+  Bookmark,
+  Crown,
+  Loader2,
 } from 'lucide-react';
 import {
   WhatsappShareButton,
@@ -33,22 +37,27 @@ import {
 } from 'react-share';
 import { toast } from 'react-toastify';
 import discordIcon from '../assets/discord.svg';
+import creditBanner from '../assets/credit-banner.png';
 import LazyImage from '../components/LazyImage';
 import { saveToHistory } from '../utils/historyManager';
-import { API_BASE_URL, apiClient, getImageUrl, fetchChapterDetail } from '../utils/api';
+import { API_BASE_URL, apiClient, getImageUrl } from '../utils/api';
 import AdBanner from '../components/AdBanner';
 import { useAds } from '../hooks/useAds';
 import CommentSection from '../components/CommentSection';
-import LoginPopup from '../components/LoginPopup';
 import { useAuth } from '../contexts/AuthContext';
-import { requiresLoginForChapter, CHAPTER_LOGIN_LOCK_MESSAGE, findLatestChapter, getChapterLoginLockRemainingMs, formatLockCountdown, isChapterWithinLoginLockWindow } from '../utils/latestChapter';
 import { REACTION_OPTIONS, emptyReactionCounts, sumReactionCounts } from '../constants/reactions';
-
-/** Sementara dimatikan — set `true` untuk menampilkan lagi kontrol auto scroll (premium). */
-const SHOW_AUTO_SCROLL_UI = false;
+import LoginModal from '../components/LoginModal';
+import { downloadChapterPdf } from '../utils/downloadChapterPdf';
+import {
+  requiresChapterLogin,
+  normalizeChapterImage,
+  isChapterAccessLocked,
+  isLatestChapterInList,
+  findChapterInList,
+} from '../utils/chapterAccess';
 
 /** Kecepatan auto-scroll dalam px/detik per nilai slider (0 = paling pelan). */
-const AUTO_SCROLL_PX_PER_SEC = [6, 12, 22, 38, 58, 85, 115, 155, 200];
+const AUTO_SCROLL_PX_PER_SEC = [10, 20, 35, 55, 80, 110, 150, 200, 260];
 
 const ChapterReader = () => {
   const { chapterSlug } = useParams();
@@ -58,23 +67,32 @@ const ChapterReader = () => {
   const [error, setError] = useState(null);
   const [showChapterList, setShowChapterList] = useState(false);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(-1);
-  const [showScrollButtons, setShowScrollButtons] = useState(false);
   const [mangaSlug, setMangaSlug] = useState(null);
+
+  // Settings & Controls States
+  const [isControlsVisible, setIsControlsVisible] = useState(false);
+  const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
+  const [fitToWidth, setFitToWidth] = useState(false);
+  const [readerImageWidth, setReaderImageWidth] = useState(900);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  // Auto Scroll States
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
   const [autoScrollSpeed, setAutoScrollSpeed] = useState(2);
-  const [showResumeAutoPlay, setShowResumeAutoPlay] = useState(false);
   const autoScrollTimerRef = useRef(null);
   const autoScrollAccumRef = useRef(0);
   const topRef = useRef(null);
-  const { user, isAuthenticated } = useAuth();
+  const commentSectionRef = useRef(null);
+
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [pendingChapterSlug, setPendingChapterSlug] = useState(null);
   const isPremiumUser = !!user?.membership_active;
-  const [loginPopupOpen, setLoginPopupOpen] = useState(false);
-  const [lockNowMs, setLockNowMs] = useState(() => Date.now());
-  const loginPopupAutoOpenedRef = useRef(null);
-  const discordInviteUrl = 'https://discord.gg/3tGVDZCF3a';
-  const donateUrl = 'https://saweria.co/NusaKomik';
+
+  const discordInviteUrl = 'https://discord.gg/dgC22PSm9h';
+  const donateUrl = 'https://saweria.co/KomikNesia';
   const chapterOrigin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://id.nusakomik.com';
+    typeof window !== 'undefined' ? window.location.origin : 'https://komiknesia.com';
   const chapterShareUrl = chapterSlug ? `${chapterOrigin}/view/${chapterSlug}` : '';
   const [chapterSharePopupOpen, setChapterSharePopupOpen] = useState(false);
 
@@ -135,136 +153,95 @@ const ChapterReader = () => {
     }
   };
 
-  // Fetch chapter content (includes all data we need)
-  useEffect(() => {
-    const fetchChapterData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        const token = apiClient.getAuthToken();
-        const result = await fetchChapterDetail(chapterSlug, token);
-        
-        if (result.status && result.data) {
-          setChapterData(result.data);
-          
-          // Extract manga slug from API response (assuming it exists in content.slug or derive from data)
-          const extractedMangaSlug = result.data.content?.slug || result.data.content?.id;
-          setMangaSlug(extractedMangaSlug);
-          
-          // Increment view counter for this manga
-          if (extractedMangaSlug) {
-            try {
-              await fetch(`${API_BASE_URL}/comic/${extractedMangaSlug}/view`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                }
-              });
-            } catch (viewError) {
-              // Silently fail - view counter is not critical
-              console.warn('Failed to increment view counter:', viewError);
-            }
-          }
-          
-          // Set current chapter index from chapters list
-          if (result.data.chapters && result.data.chapters.length > 0) {
-            const index = result.data.chapters.findIndex(ch => ch.slug === chapterSlug);
-            setCurrentChapterIndex(index);
-            
-            // Save to reading history
-            const currentChapter = result.data.chapters[index];
-            if (currentChapter && result.data.content) {
-              saveToHistory({
-                mangaSlug: extractedMangaSlug,
-                mangaTitle: result.data.content.title,
-                cover: result.data.content.cover,
-                chapterSlug: currentChapter.slug,
-                chapterNumber: currentChapter.number || currentChapter.chapter_number || null,
-                chapterTitle: currentChapter.title || null,
-              });
-            }
-          }
-        } else {
-          throw new Error('Data chapter tidak valid');
-        }
-      } catch (err) {
-        console.error('Error fetching chapter:', err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchChapterData = useCallback(async () => {
+    if (!chapterSlug) return;
 
-    if (chapterSlug) {
-      fetchChapterData();
-      // Scroll to top when chapter changes
-      if (topRef.current) {
-        topRef.current.scrollIntoView({ behavior: 'smooth' });
+    try {
+      setLoading(true);
+      setError(null);
+
+      const token = apiClient.getAuthToken();
+      const response = await fetch(`${API_BASE_URL}/chapters/slug/${chapterSlug}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!response.ok) {
+        throw new Error('Chapter tidak ditemukan');
       }
+
+      const result = await response.json();
+
+      if (result.status && result.data) {
+        const chapters = result.data.chapters || [];
+        const index = chapters.findIndex((ch) => ch.slug === chapterSlug);
+        const currentChapter = index >= 0 ? chapters[index] : null;
+        const isLoggedIn = isAuthenticated || !!token;
+        const locked = isChapterAccessLocked(chapters, chapterSlug, isLoggedIn);
+
+        setChapterData({
+          ...result.data,
+          images: locked ? [] : result.data.images || [],
+        });
+
+        const extractedMangaSlug = result.data.content?.slug || result.data.content?.id;
+        setMangaSlug(extractedMangaSlug);
+        setCurrentChapterIndex(index);
+
+        if (!locked && extractedMangaSlug) {
+          try {
+            await fetch(`${API_BASE_URL}/comic/${extractedMangaSlug}/view`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            });
+          } catch (viewError) {
+            console.warn('Failed to increment view counter:', viewError);
+          }
+        }
+
+        if (!locked && currentChapter && result.data.content) {
+          saveToHistory({
+            mangaSlug: extractedMangaSlug,
+            mangaTitle: result.data.content.title,
+            cover: result.data.content.cover,
+            chapterSlug: currentChapter.slug,
+            chapterNumber: currentChapter.number || currentChapter.chapter_number || null,
+            chapterTitle: currentChapter.title || null,
+            chapterCreatedAt: currentChapter.created_at || null,
+            isLatestChapter: isLatestChapterInList(chapters, chapterSlug),
+          });
+        }
+      } else {
+        throw new Error('Data chapter tidak valid');
+      }
+    } catch (err) {
+      console.error('Error fetching chapter:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
+  }, [chapterSlug, isAuthenticated]);
+
+  useEffect(() => {
+    if (chapterSlug) {
+      setCurrentChapterIndex(-1);
+      fetchChapterData();
+    }
+  }, [chapterSlug, fetchChapterData]);
+
+  useEffect(() => {
+    if (!chapterSlug) return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    setIsControlsVisible(false);
   }, [chapterSlug]);
 
   const allChapters = chapterData?.chapters || [];
   const mangaData = chapterData?.content || null;
-  const currentChapter = allChapters[currentChapterIndex];
-  const latestChapter = findLatestChapter(allChapters);
-  const latestLockRemainingMs = latestChapter
-    ? getChapterLoginLockRemainingMs(latestChapter, lockNowMs)
-    : 0;
-  const latestLockCountdown =
-    latestLockRemainingMs > 0 ? formatLockCountdown(latestLockRemainingMs) : null;
-  const isCurrentChapterLocked =
-    !!currentChapter &&
-    requiresLoginForChapter(currentChapter, allChapters, isAuthenticated, lockNowMs);
-
-  useEffect(() => {
-    loginPopupAutoOpenedRef.current = null;
-  }, [chapterSlug]);
-
-  useEffect(() => {
-    if (isAuthenticated || !latestChapter) return undefined;
-    if (!isChapterWithinLoginLockWindow(latestChapter)) return undefined;
-
-    const timerId = setInterval(() => {
-      setLockNowMs(Date.now());
-    }, 1000);
-
-    return () => clearInterval(timerId);
-  }, [isAuthenticated, latestChapter?.slug]);
-
-  useEffect(() => {
-    if (loginPopupOpen && latestLockRemainingMs <= 0) {
-      setLoginPopupOpen(false);
-    }
-  }, [loginPopupOpen, latestLockRemainingMs]);
-
-  useEffect(() => {
-    if (!loading && currentChapter && isCurrentChapterLocked) {
-      if (loginPopupAutoOpenedRef.current !== currentChapter.slug) {
-        loginPopupAutoOpenedRef.current = currentChapter.slug;
-        setLoginPopupOpen(true);
-      }
-    }
-  }, [loading, currentChapter?.slug, isCurrentChapterLocked]);
-
-  const openLoginPopupForLockedChapter = () => {
-    setShowChapterList(false);
-    setLoginPopupOpen(true);
-  };
-
-  const tryNavigateToChapter = (chapter) => {
-    if (requiresLoginForChapter(chapter, allChapters, isAuthenticated, lockNowMs)) {
-      openLoginPopupForLockedChapter();
-      return;
-    }
-    navigate(`/view/${chapter.slug}`);
-    setShowChapterList(false);
-  };
 
   // Fetch ads for manga-detail-top and manga-detail-bottom
-  const { ads: mangaDetailTopAds } = useAds('manga-detail-top', !isPremiumUser);
-  const { ads: mangaDetailBottomAds } = useAds('manga-detail-bottom', !isPremiumUser);
+  const { ads: mangaDetailTopAds } = useAds('manga-detail-top');
+  const { ads: mangaDetailBottomAds } = useAds('manga-detail-bottom');
 
   const handlePrevChapter = () => {
     if (currentChapterIndex < allChapters.length - 1) {
@@ -273,21 +250,37 @@ const ChapterReader = () => {
     }
   };
 
+  const isLoggedIn = isAuthenticated || !!apiClient.getAuthToken();
+
   const handleNextChapter = () => {
     if (currentChapterIndex > 0) {
       const nextChapter = allChapters[currentChapterIndex - 1];
-      tryNavigateToChapter(nextChapter);
+      if (isChapterAccessLocked(allChapters, nextChapter.slug, isLoggedIn)) {
+        setPendingChapterSlug(nextChapter.slug);
+        setLoginOpen(true);
+        return;
+      }
+      navigate(`/view/${nextChapter.slug}`);
     }
   };
 
   const handleChapterSelect = (chapter) => {
-    tryNavigateToChapter(chapter);
+    if (requiresChapterLogin(chapter, isLoggedIn)) {
+      setPendingChapterSlug(chapter.slug);
+      setShowChapterList(false);
+      setLoginOpen(true);
+      return;
+    }
+    setPendingChapterSlug(null);
+    navigate(`/view/${chapter.slug}`);
+    setShowChapterList(false);
   };
 
   const hasPrevChapter = currentChapterIndex < allChapters.length - 1;
   const hasNextChapter = currentChapterIndex > 0;
 
-  // Handle scroll detection for showing scroll buttons (rAF + passive = less main-thread jank)
+  // Track scroll for hiding UI controls
+  const lastScrollYRef = useRef(0);
   useEffect(() => {
     let rafScheduled = false;
     const handleScroll = () => {
@@ -295,8 +288,12 @@ const ChapterReader = () => {
       rafScheduled = true;
       requestAnimationFrame(() => {
         rafScheduled = false;
-        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        setShowScrollButtons(scrollTop > 300);
+        const currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
+        // If user scrolls up or down, hide controls if they were visible
+        if (Math.abs(currentScrollY - lastScrollYRef.current) > 5) {
+          setIsControlsVisible(false);
+        }
+        lastScrollYRef.current = currentScrollY;
       });
     };
 
@@ -304,13 +301,80 @@ const ChapterReader = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Scroll functions - scroll incrementally for better reading experience
-  const scrollUp = () => {
-    if (SHOW_AUTO_SCROLL_UI && autoScrollEnabled) {
-      setAutoScrollEnabled(false);
-      setShowResumeAutoPlay(true);
+  // Handle tap/click on background/image to toggle controls visibility
+  const handleMainAreaClick = (e) => {
+    // Prevent toggle if clicking interactive elements, buttons, modals, or drawer
+    if (
+      e.target.closest('button') ||
+      e.target.closest('a') ||
+      e.target.closest('input') ||
+      e.target.closest('[role="dialog"]') ||
+      showChapterList ||
+      showSettingsDrawer ||
+      chapterSharePopupOpen
+    ) {
+      return;
     }
-    const scrollAmount = 600; // Scroll 600px at a time
+    setIsControlsVisible((prev) => !prev);
+  };
+
+  // Premium Alert Trigger
+  const triggerPremiumAlert = (featureName) => {
+    toast.info(
+      <div className="flex flex-col gap-1 text-left">
+        <div className="flex items-center gap-1.5 font-bold text-amber-400">
+          <Crown className="h-4 w-4" /> Fitur Premium VIP!
+        </div>
+        <p className="text-xs text-gray-200">
+          {featureName} hanya tersedia untuk member VIP. Yuk upgrade akun kamu!
+        </p>
+      </div>,
+      { autoClose: 4000 }
+    );
+  };
+
+  // Handle Settings Toggle Button
+  const handleOpenSettings = () => {
+    if (!isPremiumUser) {
+      triggerPremiumAlert('Reader Settings');
+      return;
+    }
+    setShowSettingsDrawer(true);
+  };
+
+  // Handle Auto Scroll Toggle Button
+  const handleToggleAutoScroll = () => {
+    if (!isPremiumUser) {
+      triggerPremiumAlert('Auto Scroll');
+      return;
+    }
+    setAutoScrollEnabled((prev) => !prev);
+  };
+
+  // Handle Download PDF
+  const handleDownloadPdf = async () => {
+    if (!chapterSlug) return;
+    try {
+      setDownloadingPdf(true);
+      toast.info('Menyiapkan download chapter PDF...');
+      await downloadChapterPdf({
+        slug: chapterSlug,
+        mangaTitle: mangaData?.title || 'KomikNesia',
+        chapterNumber: currentChapter?.number || chapterData?.number || '0',
+      });
+      toast.success('Chapter berhasil diunduh sebagai PDF!');
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || 'Gagal mengunduh chapter PDF');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  // Scroll functions
+  const scrollUp = () => {
+    if (autoScrollEnabled) setAutoScrollEnabled(false);
+    const scrollAmount = 600;
     const currentPosition = window.pageYOffset || document.documentElement.scrollTop;
     window.scrollTo({ 
       top: Math.max(0, currentPosition - scrollAmount), 
@@ -319,11 +383,8 @@ const ChapterReader = () => {
   };
 
   const scrollDown = () => {
-    if (SHOW_AUTO_SCROLL_UI && autoScrollEnabled) {
-      setAutoScrollEnabled(false);
-      setShowResumeAutoPlay(true);
-    }
-    const scrollAmount = 600; // Scroll 600px at a time
+    if (autoScrollEnabled) setAutoScrollEnabled(false);
+    const scrollAmount = 600;
     const currentPosition = window.pageYOffset || document.documentElement.scrollTop;
     window.scrollTo({ 
       top: currentPosition + scrollAmount, 
@@ -331,8 +392,15 @@ const ChapterReader = () => {
     });
   };
 
+  const scrollToComments = () => {
+    if (commentSectionRef.current) {
+      commentSectionRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  // Auto Scroll Engine
   useEffect(() => {
-    if (!isPremiumUser || !SHOW_AUTO_SCROLL_UI || !autoScrollEnabled) {
+    if (!isPremiumUser || !autoScrollEnabled) {
       if (autoScrollTimerRef.current != null) {
         cancelAnimationFrame(autoScrollTimerRef.current);
         autoScrollTimerRef.current = null;
@@ -358,8 +426,6 @@ const ChapterReader = () => {
         window.scrollBy({ top: step, left: 0, behavior: 'auto' });
         autoScrollAccumRef.current -= step;
       }
-      // Selalu simpan id frame terbaru agar cleanup membatalkan seluruh rantai RAF,
-      // bukan hanya frame pertama (tanpa ini auto-scroll tetap jalan setelah pause).
       autoScrollTimerRef.current = requestAnimationFrame(tick);
     };
     autoScrollTimerRef.current = requestAnimationFrame(tick);
@@ -373,14 +439,12 @@ const ChapterReader = () => {
     };
   }, [isPremiumUser, autoScrollEnabled, autoScrollSpeed]);
 
-  // Turn off auto-scroll when user manually scrolls/interacts.
+  // Turn off auto-scroll when user manually scrolls/interacts
   useEffect(() => {
-    if (!isPremiumUser || !SHOW_AUTO_SCROLL_UI) return;
+    if (!isPremiumUser || !autoScrollEnabled) return;
 
     const disableAutoScrollByUser = () => {
-      if (!SHOW_AUTO_SCROLL_UI || !autoScrollEnabled) return;
       setAutoScrollEnabled(false);
-      setShowResumeAutoPlay(true);
     };
 
     const onKeyDown = (event) => {
@@ -399,14 +463,23 @@ const ChapterReader = () => {
       window.removeEventListener('touchmove', disableAutoScrollByUser);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [isPremiumUser, SHOW_AUTO_SCROLL_UI, autoScrollEnabled]);
+  }, [isPremiumUser, autoScrollEnabled]);
 
-  if (loading) {
+  const chapterLocked =
+    !authLoading && isChapterAccessLocked(allChapters, chapterSlug, isLoggedIn);
+
+  useEffect(() => {
+    if (chapterLocked && !loginOpen) {
+      setLoginOpen(true);
+    }
+  }, [chapterLocked, loginOpen]);
+
+  if (loading || authLoading) {
     return (
-      <div className="min-h-screen bg-primary-950 flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mb-4"></div>
-          <p className="text-gray-400">Loading chapter...</p>
+          <Loader2 className="h-10 w-10 animate-spin text-sky-400 mx-auto mb-3" />
+          <p className="text-gray-400 text-sm">Memuat chapter...</p>
         </div>
       </div>
     );
@@ -438,59 +511,67 @@ const ChapterReader = () => {
     );
   }
 
+  const currentChapter =
+    findChapterInList(allChapters, chapterSlug) ||
+    (currentChapterIndex >= 0 ? allChapters[currentChapterIndex] : null);
   const chapterNumber = currentChapter?.number || chapterData?.number;
   const mangaTitle = mangaData?.title || chapterData?.title || 'KomikNesia';
   const pageTitle = `${mangaTitle} Chapter ${chapterNumber} Bahasa Indonesia | KomikNesia`;
   const pageDescription = `Baca ${mangaTitle} chapter ${chapterNumber} bahasa Indonesia terbaru di KomikNesia. Episode terbaru, Update cepat, kualitas gambar jernih, dan mudah dibaca.`;
-  const chapterShareTitle = `Baca ${mangaTitle} chapter ${chapterNumber} bahasa Indonesia di NusaKomik`;
+  const chapterShareTitle = `${mangaTitle} Chapter ${chapterNumber}`;
 
   return (
-    <div ref={topRef} className="min-h-screen bg-primary-950 text-gray-100">
+    <div
+      ref={topRef}
+      onClick={handleMainAreaClick}
+      className="min-h-screen bg-[#0d0e12] text-gray-100 relative select-none"
+    >
       <Helmet>
         <title>{pageTitle}</title>
         <meta name="description" content={pageDescription} />
-        <link rel="canonical" href={`https://id.nusakomik.com/view/${chapterSlug}`} />
+        <link rel="canonical" href={chapterShareUrl} />
       </Helmet>
-      {/* Fixed Header */}
-      <header className="bg-primary-950 shadow-lg fixed top-0 left-0 right-0 z-50">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-2.5 sm:py-3">
-            {/* Left Section */}
-            <div className="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0">
-              <button
-                onClick={() => navigate(mangaSlug ? `/komik/${mangaSlug}` : '/')}
-                className="p-1.5 sm:p-2 rounded-lg bg-primary-800 hover:bg-primary-700 transition-colors"
-                title="Kembali ke detail manga"
-              >
-                <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
-              </button>
-              
-              <button
-                onClick={() => navigate('/')}
-                className="p-1.5 sm:p-2 rounded-lg bg-primary-800 hover:bg-primary-700 transition-colors"
-                title="Ke beranda"
-              >
-                <Home className="h-4 w-4 sm:h-5 sm:w-5" />
-              </button>
-            </div>
 
-            {/* Center Section - Chapter Info */}
-            <div className="flex-1 mx-2 sm:mx-4 text-center min-w-0">
-              <h1 className="text-xs sm:text-sm md:text-base font-semibold line-clamp-1">
-                {mangaData?.title || 'Loading...'}
-              </h1>
-              <p className="text-[10px] sm:text-xs text-gray-400">
-                Chapter {currentChapter?.number || chapterData?.number}
-              </p>
-            </div>
+      {/* Floating Top Header Pill (Gambar 1) */}
+      <header
+        className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 w-[92%] max-w-xl ${
+          isControlsVisible
+            ? 'opacity-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 -translate-y-6 pointer-events-none'
+        }`}
+      >
+        <div className="bg-[#181920]/90 backdrop-blur-md border border-white/10 rounded-full px-4 py-2.5 shadow-2xl flex items-center justify-between text-white">
+          <button
+            onClick={() => navigate(mangaSlug ? `/komik/${mangaSlug}` : '/')}
+            className="p-1.5 rounded-full hover:bg-white/10 transition-colors text-gray-300 hover:text-white"
+            title="Kembali ke detail manga"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
 
-            {/* Right Section */}
+          <div className="text-center mx-3 min-w-0 flex-1">
+            <h1 className="text-xs sm:text-sm font-semibold truncate tracking-wide text-gray-200 uppercase">
+              {mangaData?.title || 'Loading...'}
+            </h1>
+            <p className="text-[11px] font-bold text-sky-400 uppercase tracking-wider">
+              CHAPTER {currentChapter?.number || chapterData?.number}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1">
             <button
-              onClick={() => setShowChapterList(!showChapterList)}
-              className="p-1.5 sm:p-2 rounded-lg bg-primary-800 hover:bg-primary-700 transition-colors flex-shrink-0"
-              title="Daftar chapter"
+              onClick={() => setChapterSharePopupOpen(true)}
+              className="p-1.5 rounded-full hover:bg-white/10 transition-colors text-gray-300 hover:text-white"
+              title="Bagikan chapter"
             >
-              <List className="h-4 w-4 sm:h-5 sm:w-5" />
+              <Share2 className="h-4.5 w-4.5" />
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="p-1.5 rounded-full hover:bg-white/10 transition-colors text-gray-300 hover:text-white"
+              title="Ke beranda"
+            >
+              <Home className="h-4.5 w-4.5" />
             </button>
           </div>
         </div>
@@ -498,249 +579,147 @@ const ChapterReader = () => {
 
       {/* Chapter List Modal */}
       {showChapterList && (
-        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-primary-950 rounded-lg max-w-2xl w-full max-h-[85vh] sm:max-h-[80vh] overflow-hidden flex flex-col">
-            {/* Modal Header */}
-            <div className="flex justify-between items-center p-3 sm:p-4 border-b border-primary-800">
-              <h2 className="text-lg sm:text-xl font-bold">Daftar Chapter</h2>
+        <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm">
+          <div className="bg-[#14151b] border border-white/10 rounded-2xl max-w-2xl w-full max-h-[85vh] sm:max-h-[80vh] overflow-hidden flex flex-col shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b border-white/10">
+              <h2 className="text-base sm:text-lg font-bold text-white">Daftar Chapter</h2>
               <button
                 onClick={() => setShowChapterList(false)}
-                className="p-1.5 sm:p-2 rounded-lg hover:bg-primary-800 transition-colors"
+                className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Chapter List */}
-            <div className="overflow-y-auto flex-1 p-3 sm:p-4">
-              <div className="space-y-2">
-                {allChapters.map((chapter, index) => {
-                  const isLocked = requiresLoginForChapter(chapter, allChapters, isAuthenticated, lockNowMs);
-                  return (
-                  <button
-                    key={chapter.id}
-                    onClick={() => handleChapterSelect(chapter)}
-                    className={`w-full text-left p-3 sm:p-4 rounded-lg transition-colors ${
-                      chapter.slug === chapterSlug
-                        ? 'bg-primary-600 text-white'
-                        : isLocked
-                          ? 'bg-primary-800/80 ring-1 ring-amber-500/30 hover:bg-primary-700 text-gray-300'
-                          : 'bg-primary-800 hover:bg-primary-700 text-gray-300'
-                    }`}
-                  >
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-sm sm:text-base flex items-center gap-2">
-                        Chapter {chapter.number}
-                        {isLocked && (
-                          <Lock className="h-3.5 w-3.5 shrink-0 text-amber-400" aria-hidden />
-                        )}
+            <div className="overflow-y-auto flex-1 p-3 sm:p-4 space-y-2">
+              {allChapters.map((chapter, index) => (
+                <button
+                  key={chapter.id}
+                  onClick={() => handleChapterSelect(chapter)}
+                  className={`w-full text-left p-3.5 rounded-xl transition-all ${
+                    chapter.slug === chapterSlug
+                      ? 'bg-gradient-to-r from-sky-400 to-blue-600 text-white font-semibold shadow-md shadow-sky-500/20'
+                      : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Chapter {chapter.number}</span>
+                    {index === 0 && (
+                      <span className="text-[10px] bg-gradient-to-r from-sky-400 to-blue-600 text-white px-2 py-0.5 rounded font-bold shadow-sm">
+                        NEW
                       </span>
-                      {index === 0 && (
-                        <span className="text-[10px] sm:text-xs bg-red-500 text-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded">
-                          NEW
-                        </span>
-                      )}
-                    </div>
-                    {chapter.title && chapter.title !== `Chapter ${chapter.number}` && (
-                      <p className="text-xs sm:text-sm text-gray-400 mt-1 line-clamp-1">{chapter.title}</p>
                     )}
-                    <div className="mt-1.5 flex flex-wrap gap-3 text-[11px] text-gray-500">
-                      <span className="inline-flex items-center gap-1">
-                        <Eye className="h-3 w-3 shrink-0" aria-hidden />
-                        {(Number(chapter.views) || 0).toLocaleString('id-ID')}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Sparkles className="h-3 w-3 shrink-0 text-amber-400/80" aria-hidden />
-                        {(Number(chapter.reaction_count) || 0).toLocaleString('id-ID')}
-                      </span>
-                    </div>
-                  </button>
-                );
-                })}
-              </div>
+                  </div>
+                  {chapter.title && chapter.title !== `Chapter ${chapter.number}` && (
+                    <p className="text-xs text-gray-400 mt-1 truncate">{chapter.title}</p>
+                  )}
+                </button>
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* Main Content */}
-      <main className="pt-16 sm:pt-20 pb-20 sm:pb-24">
-        <div className="max-w-4xl mx-auto">
-          {/* Chapter Title */}
-          <div className="px-3 sm:px-4 py-4 sm:py-6 text-center">
-            <h2 className="text-lg sm:text-xl md:text-2xl font-bold mb-1 sm:mb-2 line-clamp-2">
-              {mangaData?.title || chapterData?.title}
-            </h2>
-            <p className="text-sm sm:text-base md:text-lg text-gray-400">
-              Chapter {currentChapter?.number || chapterData?.number}
-            </p>
-            <div className="mt-2 flex flex-wrap justify-center gap-4 text-sm text-gray-400">
-              <span className="inline-flex items-center gap-1.5">
-                <Eye className="h-4 w-4 shrink-0" aria-hidden />
-                {(Number(currentChapter?.views) || 0).toLocaleString('id-ID')} lihat chapter
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Sparkles className="h-4 w-4 shrink-0 text-amber-300/90" aria-hidden />
-                {sumReactionCounts(chapterReactionData).toLocaleString('id-ID')} reaksi
-              </span>
-            </div>
-            {isPremiumUser && SHOW_AUTO_SCROLL_UI && (
-              <div className="mt-4 max-w-md mx-auto rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 sm:p-4">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAutoScrollEnabled((prev) => {
-                        const next = !prev;
-                        if (next) {
-                          setShowResumeAutoPlay(false);
-                        }
-                        return next;
-                      });
-                    }}
-                    className="h-10 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center justify-center gap-2"
-                  >
-                    {autoScrollEnabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                    {autoScrollEnabled ? 'Pause Auto Scroll' : 'Play Auto Scroll'}
-                  </button>
-                  <div className="flex-1 text-left">
-                    <label className="block text-xs text-gray-300 mb-1">Kecepatan Auto Scroll</label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={8}
-                      step={1}
-                      value={autoScrollSpeed}
-                      onChange={(e) => setAutoScrollSpeed(Number(e.target.value))}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Ad Banner - Top of Images (min-height mengurangi CLS + area iklan konsisten) */}
+      {/* Main Content Area */}
+      <main className="min-h-screen py-0 px-0">
+        <div
+          className="mx-auto transition-all duration-200"
+          style={{
+            maxWidth: fitToWidth ? '100%' : `${readerImageWidth}px`,
+          }}
+        >
+          {/* Ad Banner - Top (Sebelum Chapter Images) */}
           {!isPremiumUser && mangaDetailTopAds.length > 0 && (
-            <div className="px-3 sm:px-4 mb-6 min-h-[80px] sm:min-h-[90px] md:min-h-[100px]">
-              <AdBanner
-                ads={mangaDetailTopAds}
-                layout="grid"
-                columns={1}
-              />
+            <div className="px-4 my-4">
+              <AdBanner ads={mangaDetailTopAds} layout="grid" columns={1} />
             </div>
           )}
 
-          {/* Chapter images: tanpa gap/padding antar panel (min-h besar slice webtoon bikin celah hitam di mobile) */}
-          {isCurrentChapterLocked ? (
-            <div className="mx-3 sm:mx-4 my-8 rounded-2xl border border-amber-500/30 bg-primary-900/90 px-6 py-16 text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/15 text-amber-400">
-                <Lock className="h-8 w-8" aria-hidden />
-              </div>
-              <h3 className="text-xl font-bold text-white">Chapter terbaru terkunci</h3>
-              <p className="mt-2 text-sm text-gray-400">
-                Chapter ini baru rilis (kurang dari 2 jam). Login atau daftar akun untuk membaca sekarang.
+          {chapterLocked ? (
+            <div className="px-4 py-24 text-center">
+              <p className="mb-2 text-lg font-semibold text-white">Chapter Terkunci</p>
+              <p className="mb-6 text-sm text-gray-400 max-w-md mx-auto">
+                Chapter ini baru rilis kurang dari 2 jam. Login untuk membaca sekarang, atau tunggu hingga 2 jam setelah rilis untuk baca tanpa login.
               </p>
-              {latestLockCountdown && (
-                <div className="mx-auto mt-6 max-w-xs rounded-2xl border border-cyan-400/25 bg-cyan-500/10 px-4 py-4">
-                  <p className="text-sm font-semibold text-cyan-100">Bebas Baca Tanpa Login</p>
-                  <p className="mt-1 font-mono text-3xl font-bold tabular-nums tracking-wider text-white">
-                    {latestLockCountdown}
-                  </p>
-                </div>
-              )}
               <button
                 type="button"
-                onClick={() => setLoginPopupOpen(true)}
-                className="mt-6 inline-flex items-center justify-center rounded-xl bg-violet-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
+                onClick={() => setLoginOpen(true)}
+                className="rounded-xl bg-gradient-to-r from-sky-400 to-blue-600 px-6 py-3 text-sm font-semibold text-white transition-all hover:from-sky-500 hover:to-blue-700 shadow-lg shadow-sky-500/20"
               >
-                Login untuk membaca
+                Login untuk Melanjutkan
               </button>
             </div>
           ) : (
-          <div className="webtoon-pages space-y-0 flex flex-col gap-0 p-0 m-0">
-            {chapterData?.images && chapterData.images.length > 0 ? (
-              chapterData.images.map((image, index) => (
-                <div
-                  key={index}
-                  className="w-full m-0 p-0 leading-[0] overflow-hidden"
-                >
-                  <LazyImage
-                    src={getImageUrl(image)}
-                    alt={`Page ${index + 1}`}
-                    className="w-full h-auto block align-bottom m-0 p-0 border-0 outline-none"
-                    wrapperClassName="w-full block m-0 p-0 leading-[0] min-h-0"
-                    loadingClassName="min-h-[42vh] sm:min-h-[56vh] md:min-h-[64vh]"
-                  />
+            <div className="webtoon-pages flex flex-col gap-0 p-0 m-0 select-none">
+              {chapterData?.images && chapterData.images.length > 0 ? (
+                <>
+                  {chapterData.images.map((image, index) => {
+                    const { src } = normalizeChapterImage(image);
+                    return (
+                      <div
+                        key={index}
+                        className="w-full m-0 p-0 leading-[0] overflow-hidden"
+                      >
+                        <LazyImage
+                          src={getImageUrl(src)}
+                          alt={`Page ${index + 1}`}
+                          className="w-full h-auto block align-bottom m-0 p-0 border-0 outline-none"
+                          wrapperClassName="w-full block m-0 p-0 leading-[0] min-h-0"
+                          loadingClassName="min-h-[40vh] sm:min-h-[50vh]"
+                        />
+                      </div>
+                    );
+                  })}
+                  {/* Credit Banner */}
+                  <div className="w-full m-0 p-0 leading-[0] overflow-hidden">
+                    <img
+                      src={creditBanner}
+                      alt="KomikNesia Credit Banner"
+                      className="w-full h-auto block align-bottom m-0 p-0 border-0 outline-none"
+                      loading="lazy"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-20 text-gray-400 text-sm">
+                  Tidak ada gambar tersedia untuk chapter ini
                 </div>
-              ))
-            ) : (
-              <div className="text-center py-12 px-4 text-gray-400 text-sm sm:text-base">
-                Tidak ada gambar tersedia untuk chapter ini
-              </div>
-            )}
-          </div>
+              )}
+            </div>
           )}
 
           {/* Bagikan chapter, Discord, Donasi, Lapor error */}
-          <div className="px-3 sm:px-4 pt-4 pb-2">
-            <div className="mx-auto grid max-w-4xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-3">
+          <div className="px-4 pt-8 pb-4">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
               <button
                 type="button"
                 onClick={() => setChapterSharePopupOpen(true)}
-                className="group flex w-full items-center gap-3 rounded-2xl border border-slate-700/90 bg-[#111827] p-3.5 text-left shadow-md transition-all hover:border-slate-600 hover:bg-slate-800/95 sm:gap-4 sm:p-4"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/90 backdrop-blur-md px-3 py-3 shadow-md transition-all hover:scale-[1.02] hover:border-white/20 hover:bg-white/10"
               >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-inner sm:h-12 sm:w-12">
-                  <Share2 className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-white sm:text-base">Bagikan chapter</p>
-                  <p className="text-xs text-slate-400 sm:text-sm">
-                    Salin tautan, WhatsApp, X, TikTok, Telegram
-                  </p>
-                </div>
-                <ChevronRight
-                  className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-300 sm:h-5 sm:w-5"
-                  aria-hidden
-                />
+                <Share2 className="h-5 w-5 text-sky-400 shrink-0" />
+                <span className="text-xs font-bold text-white sm:text-sm">Bagikan chapter</span>
               </button>
 
               <a
                 href={discordInviteUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex w-full items-center gap-3 rounded-2xl border border-slate-700/90 bg-[#111827] p-3.5 text-left shadow-md transition-all hover:border-slate-600 hover:bg-slate-800/95 sm:gap-4 sm:p-4"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/90 backdrop-blur-md px-3 py-3 shadow-md transition-all hover:scale-[1.02] hover:border-white/20 hover:bg-white/10"
               >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#5865F2] text-white shadow-inner sm:h-12 sm:w-12">
-                  <img src={discordIcon} alt="" className="h-6 w-6 sm:h-7 sm:w-7" aria-hidden />
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5865F2]">
+                  <img src={discordIcon} alt="" className="h-4 w-4" aria-hidden />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-white sm:text-base">Discord</p>
-                  <p className="text-xs text-slate-400 sm:text-sm">Gabung komunitas pembaca</p>
-                </div>
-                <ExternalLink
-                  className="h-4 w-4 shrink-0 text-slate-500 group-hover:text-slate-300 sm:h-5 sm:w-5"
-                  aria-hidden
-                />
+                <span className="text-xs font-bold text-white sm:text-sm">Discord</span>
               </a>
 
               <a
                 href={donateUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex w-full items-center gap-3 rounded-2xl border border-slate-700/90 bg-[#111827] p-3.5 text-left shadow-md transition-all hover:border-slate-600 hover:bg-slate-800/95 sm:gap-4 sm:p-4"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/90 backdrop-blur-md px-3 py-2.5 shadow-md transition-all hover:scale-[1.02] hover:border-white/20 hover:bg-white/10"
               >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-inner sm:h-12 sm:w-12">
-                  <Heart className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-white sm:text-base">Donasi</p>
-                  <p className="text-xs text-slate-400 sm:text-sm">Dukung lewat Saweria</p>
-                </div>
-                <ExternalLink
-                  className="h-4 w-4 shrink-0 text-slate-500 group-hover:text-slate-300 sm:h-5 sm:w-5"
-                  aria-hidden
-                />
+                <Heart className="h-5 w-5 text-amber-400 fill-amber-400 shrink-0" />
+                <span className="text-xs font-bold text-white sm:text-sm">Donasi</span>
               </a>
 
               <button
@@ -755,148 +734,42 @@ const ChapterReader = () => {
                   if (title) q.set('judul', title);
                   navigate(`/contact?${q.toString()}`);
                 }}
-                className="group flex w-full items-center gap-3 rounded-2xl border border-slate-700/90 bg-[#111827] p-3.5 text-left shadow-md transition-all hover:border-rose-500/40 hover:bg-slate-800/95 sm:gap-4 sm:p-4"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/90 backdrop-blur-md px-3 py-3 shadow-md transition-all hover:scale-[1.02] hover:border-white/20 hover:bg-white/10"
               >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white shadow-inner sm:h-12 sm:w-12">
-                  <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-white sm:text-base">Lapor komik error</p>
-                  <p className="text-xs text-slate-400 sm:text-sm">
-                    Gambar putus, urutan salah, atau hal lain — ke halaman kontak
-                  </p>
-                </div>
-                <ChevronRight
-                  className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-300 sm:h-5 sm:w-5"
-                  aria-hidden
-                />
+                <AlertTriangle className="h-5 w-5 text-sky-400 shrink-0" />
+                <span className="text-xs font-bold text-white sm:text-sm">Lapor error</span>
               </button>
             </div>
           </div>
 
-          {chapterSharePopupOpen && (
-            <div
-              className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Bagikan chapter"
-            >
-              <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-slate-900 p-5 text-left shadow-2xl">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-white">Bagikan chapter ini</h3>
-                  <button
-                    type="button"
-                    onClick={() => setChapterSharePopupOpen(false)}
-                    className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
-                    aria-label="Tutup"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-
-                <p className="mb-4 text-sm text-slate-400">
-                  Pilih cara membagikan tautan chapter ini ke teman atau medsos kamu.
-                </p>
-
-                <div className="flex flex-col gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      copyChapterShareLink('default');
-                    }}
-                    className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
-                  >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-600">
-                      <Copy className="h-5 w-5" aria-hidden />
-                    </span>
-                    <span>Salin tautan</span>
-                  </button>
-
-                  <WhatsappShareButton
-                    url={chapterShareUrl}
-                    title={chapterShareTitle}
-                    separator=" — "
-                    className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
-                    resetButtonStyle={false}
-                    onClick={() => setChapterSharePopupOpen(false)}
-                  >
-                    <WhatsappIcon size={40} round />
-                    <span>WhatsApp</span>
-                  </WhatsappShareButton>
-
-                  <TwitterShareButton
-                    url={chapterShareUrl}
-                    title={chapterShareTitle}
-                    className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
-                    resetButtonStyle={false}
-                    onClick={() => setChapterSharePopupOpen(false)}
-                  >
-                    <TwitterIcon size={40} round />
-                    <span>X (Twitter)</span>
-                  </TwitterShareButton>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      copyChapterShareLink('tiktok');
-                    }}
-                    className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
-                  >
-                    <span
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black text-lg font-bold tracking-tight text-white ring-1 ring-white/20"
-                      aria-hidden
-                    >
-                      TT
-                    </span>
-                    <span className="flex flex-col">
-                      <span>TikTok</span>
-                      <span className="text-xs font-normal text-slate-400">
-                        Salin tautan untuk dibagikan di TikTok
-                      </span>
-                    </span>
-                  </button>
-
-                  <TelegramShareButton
-                    url={chapterShareUrl}
-                    title={chapterShareTitle}
-                    className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
-                    resetButtonStyle={false}
-                    onClick={() => setChapterSharePopupOpen(false)}
-                  >
-                    <TelegramIcon size={40} round />
-                    <span>Telegram</span>
-                  </TelegramShareButton>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Reaksi chapter */}
-          <div className="px-3 sm:px-4 py-6">
-            <div className="rounded-2xl border border-primary-800 bg-primary-900/90 p-4 sm:p-6">
+          <div className="px-4 py-4">
+            <div className="rounded-2xl border border-white/10 bg-[#16171e] p-6">
               <div className="mb-4 text-center">
-                <h3 className="text-lg font-bold text-white sm:text-xl">Reaksi chapter ini</h3>
-                <p className="mt-1 text-sm text-gray-400">
+                <h3 className="text-lg font-bold text-white">Reaksi chapter ini</h3>
+                <p className="mt-1 text-xs text-gray-400">
                   {sumReactionCounts(chapterReactionData).toLocaleString('id-ID')} reaksi
                 </p>
               </div>
-              <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
+              <div className="flex flex-wrap justify-center gap-3">
                 {REACTION_OPTIONS.map((opt) => (
                   <button
                     key={opt.id}
                     type="button"
                     onClick={() => handleChapterReaction(opt.id)}
                     disabled={chapterReactionLoading}
-                    className={`flex min-w-[4.5rem] flex-col items-center rounded-xl border px-2 py-2 transition-all sm:min-w-[5.5rem] sm:px-3 sm:py-2.5 ${
+                    className={`flex min-w-[4.5rem] flex-col items-center rounded-xl border px-3 py-2.5 transition-all ${
                       selectedChapterReaction === opt.id
                         ? 'border-purple-500 bg-purple-950/50 ring-2 ring-purple-400/60'
-                        : 'border-primary-700 bg-primary-950/50 hover:border-primary-500'
+                        : 'border-white/10 bg-white/5 hover:border-white/20'
                     } ${chapterReactionLoading ? 'cursor-not-allowed opacity-50' : ''}`}
                   >
-                    <span className="text-2xl sm:text-3xl" aria-hidden>
-                      {opt.emoji}
-                    </span>
-                    <span className="mt-1 text-center text-[11px] font-medium text-gray-300 sm:text-xs">
+                    <img
+                      src={opt.image}
+                      alt={opt.label}
+                      className="h-10 w-10 object-contain"
+                    />
+                    <span className="mt-1 text-[11px] font-medium text-gray-300">
                       {opt.label}
                     </span>
                     <span className="mt-0.5 text-xs font-semibold text-gray-200">
@@ -905,91 +778,60 @@ const ChapterReader = () => {
                   </button>
                 ))}
               </div>
-              <p className="mt-4 text-center text-[11px] text-gray-500">
-                Klik untuk memberi reaksi atau mengubah pilihan
-              </p>
             </div>
           </div>
 
-          {/* Navigation Buttons (Bottom) */}
-          <div className="px-3 sm:px-4 py-6 sm:py-8">
-            <div className="flex items-center justify-center gap-2 sm:gap-3 md:gap-4">
+          {/* Prev & Next Ch Navigation (Dibawah Reaction) */}
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-3 mb-3">
               <button
+                type="button"
                 onClick={handlePrevChapter}
                 disabled={!hasPrevChapter}
-                className={`flex-1 sm:flex-none flex items-center justify-center px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg font-medium text-sm sm:text-base transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-2 rounded-2xl border py-3.5 px-4 font-semibold text-sm sm:text-base transition-colors ${
                   hasPrevChapter
-                    ? 'bg-primary-600 hover:bg-primary-700 text-white'
-                    : 'bg-primary-800 text-gray-500 cursor-not-allowed'
+                    ? 'border-sky-400/40 bg-gradient-to-r from-sky-400 to-blue-600 hover:from-sky-500 hover:to-blue-700 text-white cursor-pointer shadow-md shadow-sky-500/20'
+                    : 'border-white/10 bg-[#16171e] text-gray-600 opacity-50 cursor-not-allowed'
                 }`}
               >
-                <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
-                <span className="hidden sm:inline">Prev Chapter</span>
-                <span className="sm:hidden">Prev</span>
+                <ChevronLeft className="h-5 w-5" />
+                <span>Prev Ch</span>
               </button>
 
               <button
-                onClick={() => setShowChapterList(true)}
-                className="flex-1 sm:flex-none flex items-center justify-center px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg font-medium text-sm sm:text-base bg-primary-800 hover:bg-primary-700 text-white transition-colors"
-              >
-                <List className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
-                <span className="hidden sm:inline">Chapters</span>
-                <span className="sm:hidden">List</span>
-              </button>
-
-              <button
+                type="button"
                 onClick={handleNextChapter}
                 disabled={!hasNextChapter}
-                className={`flex-1 sm:flex-none flex items-center justify-center px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg font-medium text-sm sm:text-base transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-2 rounded-2xl border py-3.5 px-4 font-semibold text-sm sm:text-base transition-colors ${
                   hasNextChapter
-                    ? 'bg-primary-600 hover:bg-primary-700 text-white'
-                    : 'bg-primary-800 text-gray-500 cursor-not-allowed'
+                    ? 'border-sky-400/40 bg-gradient-to-r from-sky-400 to-blue-600 hover:from-sky-500 hover:to-blue-700 text-white cursor-pointer shadow-md shadow-sky-500/20'
+                    : 'border-white/10 bg-[#16171e] text-gray-600 opacity-50 cursor-not-allowed'
                 }`}
               >
-                <span className="hidden sm:inline">Next Chapter</span>
-                <span className="sm:hidden">Next</span>
-                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 sm:ml-2" />
+                <span>Next Ch</span>
+                <ChevronRight className="h-5 w-5" />
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowChapterList(true)}
+              className="w-full flex items-center justify-between rounded-2xl border border-white/10 bg-[#16171e] py-3.5 px-5 font-semibold text-sm sm:text-base text-white hover:bg-white/10 transition-colors"
+            >
+              <span>Chapter {chapterNumber}</span>
+              <List className="h-5 w-5 text-gray-400" />
+            </button>
           </div>
 
-          {/* Ad Banner - Above Comment Section with Grid 2 */}
+          {/* Ad Banner - Bottom */}
           {!isPremiumUser && mangaDetailBottomAds.length > 0 && (
-            <div className="px-3 sm:px-4 mb-6 min-h-[100px] sm:min-h-[120px] md:min-h-[140px]">
-              <AdBanner
-                ads={mangaDetailBottomAds}
-                layout="grid"
-                columns={2}
-              />
+            <div className="px-4 my-6">
+              <AdBanner ads={mangaDetailBottomAds} layout="grid" columns={2} />
             </div>
           )}
 
-          <div className="px-3 sm:px-4 mb-6">
-            <div className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 shadow-lg">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="text-left">
-                  <p className="text-sm font-semibold text-white">KASIH KOPI DISINI</p>
-                  <p className="text-xs text-slate-400">Kopinya Kawan</p>
-                </div>
-                <div className="rounded-xl bg-white/10 p-2 text-emerald-300">
-                  <Coffee className="h-4 w-4" />
-                </div>
-              </div>
-              <a
-                href={donateUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-400"
-              >
-                <Coffee className="h-4 w-4" />
-                Donasi
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            </div>
-          </div>
-
-          {/* Comment Section */}
-          <div className="px-3 sm:px-4 pb-6 sm:pb-8">
+          {/* Comment Section Ref Target */}
+          <div ref={commentSectionRef} className="px-4 py-6">
             <CommentSection
               mangaId={mangaSlug || mangaData?.slug || mangaData?.id}
               chapterId={currentChapter?.id}
@@ -999,90 +841,340 @@ const ChapterReader = () => {
         </div>
       </main>
 
-      {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-primary-950 border-t border-primary-800 z-40">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 sm:py-3">
-          <div className="flex items-center justify-between gap-2">
-            <button
-              onClick={handlePrevChapter}
-              disabled={!hasPrevChapter}
-              className={`flex items-center justify-center px-3 sm:px-4 py-2 rounded-lg font-medium text-sm sm:text-base transition-colors min-w-0 ${
-                hasPrevChapter
-                  ? 'bg-primary-800 hover:bg-primary-700 text-white'
-                  : 'bg-primary-800 text-gray-600 cursor-not-allowed'
-              }`}
-            >
-              <ChevronLeft className="h-4 w-4 sm:mr-1" />
-              <span className="hidden xs:inline">Prev</span>
-            </button>
+      {/* Floating Bottom Navigation Toolbar (Gambar 1) */}
+      <div
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 max-w-[95vw] ${
+          isControlsVisible
+            ? 'opacity-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 translate-y-6 pointer-events-none'
+        }`}
+      >
+        <div className="bg-[#181920]/95 backdrop-blur-md border border-white/10 rounded-full px-3 sm:px-4 py-2 sm:py-2.5 shadow-2xl flex items-center justify-center gap-1.5 xs:gap-2.5 sm:gap-4 text-gray-300 max-w-full overflow-x-auto no-scrollbar">
+          {/* Prev Chapter */}
+          <button
+            onClick={handlePrevChapter}
+            disabled={!hasPrevChapter}
+            className={`p-1.5 sm:p-2 rounded-full transition-colors ${
+              hasPrevChapter
+                ? 'hover:bg-sky-500/30 text-sky-400 hover:text-white'
+                : 'text-gray-600 cursor-not-allowed'
+            }`}
+            title="Prev Chapter"
+          >
+            <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+          </button>
 
-            <button
-              onClick={() => setShowChapterList(true)}
-              className="flex items-center justify-center px-3 sm:px-4 py-2 rounded-lg font-medium text-sm sm:text-base bg-primary-600 hover:bg-primary-700 text-white transition-colors flex-shrink-0"
-            >
-              <span className="mr-1 sm:mr-2">Ch. {currentChapter?.number || chapterData?.number}</span>
-              <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4" />
-            </button>
+          {/* Settings Button */}
+          <button
+            onClick={handleOpenSettings}
+            className="p-1.5 sm:p-2 rounded-full hover:bg-white/10 hover:text-white transition-colors relative"
+            title="Reader Settings"
+          >
+            <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
+            {!isPremiumUser && (
+              <Crown className="h-3 w-3 text-amber-400 absolute -top-0.5 -right-0.5" />
+            )}
+          </button>
 
-            <button
-              onClick={handleNextChapter}
-              disabled={!hasNextChapter}
-              className={`flex items-center justify-center px-3 sm:px-4 py-2 rounded-lg font-medium text-sm sm:text-base transition-colors min-w-0 ${
-                hasNextChapter
-                  ? 'bg-primary-800 hover:bg-primary-700 text-white'
-                  : 'bg-primary-800 text-gray-600 cursor-not-allowed'
-              }`}
-            >
-              <span className="hidden xs:inline">Next</span>
-              <ChevronRight className="h-4 w-4 sm:ml-1" />
-            </button>
-          </div>
+          {/* Auto Scroll Play/Pause Button */}
+          <button
+            onClick={handleToggleAutoScroll}
+            className={`p-2 sm:p-2.5 rounded-full transition-all shadow-md ${
+              autoScrollEnabled
+                ? 'bg-gradient-to-r from-sky-400 to-blue-600 text-white ring-2 ring-sky-400'
+                : 'bg-sky-500/80 hover:bg-sky-500 text-white'
+            }`}
+            title={autoScrollEnabled ? 'Pause Auto Scroll' : 'Play Auto Scroll'}
+          >
+            {autoScrollEnabled ? (
+              <Pause className="h-4 w-4 sm:h-5 sm:w-5 fill-current" />
+            ) : (
+              <Play className="h-4 w-4 sm:h-5 sm:w-5 fill-current ml-0.5" />
+            )}
+          </button>
+
+          {/* Chapter List Modal Trigger */}
+          <button
+            onClick={() => setShowChapterList(true)}
+            className="p-1.5 sm:p-2 rounded-full hover:bg-white/10 hover:text-white transition-colors"
+            title="Daftar Chapter"
+          >
+            <List className="h-4 w-4 sm:h-5 sm:w-5" />
+          </button>
+
+          {/* Download Chapter PDF */}
+          <button
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+            className="p-1.5 sm:p-2 rounded-full hover:bg-white/10 hover:text-amber-400 transition-colors text-amber-500/90"
+            title="Unduh Chapter (PDF)"
+          >
+            <Download className={`h-4 w-4 sm:h-5 sm:w-5 ${downloadingPdf ? 'animate-bounce' : ''}`} />
+          </button>
+
+          {/* Scroll to Comments */}
+          <button
+            onClick={scrollToComments}
+            className="p-1.5 sm:p-2 rounded-full hover:bg-white/10 hover:text-white transition-colors"
+            title="Ke Komentar"
+          >
+            <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5" />
+          </button>
+
+          {/* Next Chapter */}
+          <button
+            onClick={handleNextChapter}
+            disabled={!hasNextChapter}
+            className={`p-1.5 sm:p-2 rounded-full transition-colors ${
+              hasNextChapter
+                ? 'hover:bg-sky-500/30 text-sky-400 hover:text-white'
+                : 'text-gray-600 cursor-not-allowed'
+            }`}
+            title="Next Chapter"
+          >
+            <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
+          </button>
         </div>
       </div>
 
-      {/* Scroll Buttons (Desktop Only) */}
-      <div className={`hidden md:flex fixed right-6 bottom-32 flex-col gap-2 z-50 transition-all duration-300 ${
-        showScrollButtons ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
-      }`}>
+      {/* Right Side Navigation Buttons (Gambar 1) */}
+      <div
+        className={`fixed right-4 bottom-24 z-40 flex flex-col gap-2 transition-all duration-300 ${
+          isControlsVisible
+            ? 'opacity-100 translate-x-0 pointer-events-auto'
+            : 'opacity-0 translate-x-6 pointer-events-none'
+        }`}
+      >
         <button
           onClick={scrollUp}
-          className="p-3 bg-primary-800 hover:bg-primary-700 text-white rounded-full shadow-lg transition-all duration-300 hover:scale-110 group"
-          title="Scroll ke atas"
+          className="p-3 bg-[#181920]/80 backdrop-blur-md border border-white/10 text-white rounded-full shadow-xl hover:bg-white/20 transition-all active:scale-95"
+          title="Scroll Ke Atas"
         >
-          <ArrowUp className="h-5 w-5 group-hover:animate-bounce" />
+          <ChevronUp className="h-5 w-5" />
         </button>
         <button
           onClick={scrollDown}
-          className="p-3 bg-primary-800 hover:bg-primary-700 text-white rounded-full shadow-lg transition-all duration-300 hover:scale-110 group"
-          title="Scroll ke bawah"
+          className="p-3 bg-[#181920]/80 backdrop-blur-md border border-white/10 text-white rounded-full shadow-xl hover:bg-white/20 transition-all active:scale-95"
+          title="Scroll Ke Bawah"
         >
-          <ArrowDown className="h-5 w-5 group-hover:animate-bounce" />
+          <ChevronDown className="h-5 w-5" />
         </button>
       </div>
 
-      {SHOW_AUTO_SCROLL_UI && isPremiumUser && showResumeAutoPlay && !autoScrollEnabled && (
-        <button
-          type="button"
-          onClick={() => {
-            setAutoScrollEnabled(true);
-            setShowResumeAutoPlay(false);
-          }}
-          className="fixed right-5 bottom-16 md:bottom-12 z-[60] h-14 w-14 rounded-full bg-gradient-to-br from-red-500 to-rose-500 hover:from-red-400 hover:to-rose-400 text-white shadow-[0_10px_30px_rgba(239,68,68,0.45)] transition-all duration-300 hover:scale-105 flex items-center justify-center"
-          title="Lanjutkan Auto Scroll"
-          aria-label="Lanjutkan Auto Scroll"
-        >
-          <div className="relative">
-            <Play className="h-6 w-6 ml-0.5" />
-            <Sparkles className="h-3.5 w-3.5 absolute -top-1.5 -right-1.5" />
+      {/* Reader Settings Drawer / Sidebar (Gambar 2) */}
+      {showSettingsDrawer && (
+        <div className="fixed inset-0 z-[80] flex justify-end bg-black/60 backdrop-blur-sm transition-opacity duration-300">
+          <div className="bg-[#121319] border-l border-white/10 w-full max-w-md h-full p-6 flex flex-col overflow-y-auto shadow-2xl text-white">
+            {/* Header Drawer */}
+            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+              <h2 className="text-xl font-bold tracking-tight italic">Reader Settings</h2>
+              <button
+                onClick={() => setShowSettingsDrawer(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Settings Options */}
+            <div className="py-6 space-y-6 flex-1">
+              {/* Fit To Width Toggle */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
+                <span className="font-semibold text-sm tracking-wider uppercase">FIT TO WIDTH</span>
+                <button
+                  type="button"
+                  onClick={() => setFitToWidth((prev) => !prev)}
+                  className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
+                    fitToWidth
+                      ? 'bg-emerald-500 text-white shadow-md'
+                      : 'bg-red-900/60 text-red-300 border border-red-600/30'
+                  }`}
+                >
+                  {fitToWidth ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              {/* Image Width Slider */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs font-semibold tracking-wider text-gray-300">
+                  <span>IMAGE WIDTH: {fitToWidth ? 'FIT (100%)' : `${readerImageWidth}PX`}</span>
+                </div>
+                <input
+                  type="range"
+                  min={500}
+                  max={1200}
+                  step={50}
+                  disabled={fitToWidth}
+                  value={readerImageWidth}
+                  onChange={(e) => setReaderImageWidth(Number(e.target.value))}
+                  className="w-full accent-sky-500 bg-white/10 rounded-lg h-2 cursor-pointer disabled:opacity-40"
+                />
+              </div>
+
+              {/* Auto-Scroll Speed Slider */}
+              <div className="space-y-2 pt-2">
+                <div className="flex justify-between text-xs font-semibold tracking-wider text-gray-300">
+                  <span>AUTO-SCROLL SPEED: {autoScrollSpeed + 1}X</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={8}
+                  step={1}
+                  value={autoScrollSpeed}
+                  onChange={(e) => setAutoScrollSpeed(Number(e.target.value))}
+                  className="w-full accent-sky-500 bg-white/10 rounded-lg h-2 cursor-pointer"
+                />
+                <p className="text-[11px] text-gray-500 italic">Adjust the speed of automatic scrolling</p>
+              </div>
+
+              <hr className="border-white/10 my-4" />
+
+              {/* Keyboard Shortcuts Reference */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                  KEYBOARD SHORTCUTS
+                </h3>
+                <div className="space-y-2 text-xs text-gray-300">
+                  <div className="flex justify-between">
+                    <span className="font-mono text-gray-400">↑ / ↓</span>
+                    <span>Scroll</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-mono text-gray-400">← / →</span>
+                    <span>Chapters</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-mono text-gray-400">Control + Space</span>
+                    <span>Toggle auto-scroll</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-mono text-gray-400">Esc</span>
+                    <span>Close panels</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Close Button */}
+            <div className="pt-4 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setShowSettingsDrawer(false)}
+                className="w-full py-3 bg-white/10 hover:bg-white/20 text-white font-bold text-xs tracking-widest uppercase rounded-xl transition-all"
+              >
+                CLOSE
+              </button>
+            </div>
           </div>
-        </button>
+        </div>
       )}
 
-      <LoginPopup
-        open={loginPopupOpen}
-        onClose={() => setLoginPopupOpen(false)}
-        message={CHAPTER_LOGIN_LOCK_MESSAGE}
-        lockCountdown={latestLockCountdown}
+      {/* Modal Popup Bagikan Chapter */}
+      {chapterSharePopupOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Bagikan Chapter Ini"
+        >
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-slate-900 p-5 text-left shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">Bagikan Chapter Ini</h3>
+              <button
+                type="button"
+                onClick={() => setChapterSharePopupOpen(false)}
+                className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Tutup"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mb-4 text-sm text-slate-400">
+              Pilih cara membagikan tautan chapter komik ini ke teman atau medsos kamu.
+            </p>
+
+            <div className="flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  copyChapterShareLink('default');
+                }}
+                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-600">
+                  <Copy className="h-5 w-5" aria-hidden />
+                </span>
+                <span>Salin tautan</span>
+              </button>
+
+              <WhatsappShareButton
+                url={chapterShareUrl}
+                title={chapterShareTitle}
+                separator=" — "
+                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
+                resetButtonStyle={false}
+                onClick={() => setChapterSharePopupOpen(false)}
+              >
+                <WhatsappIcon size={40} round />
+                <span>WhatsApp</span>
+              </WhatsappShareButton>
+
+              <TwitterShareButton
+                url={chapterShareUrl}
+                title={chapterShareTitle}
+                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
+                resetButtonStyle={false}
+                onClick={() => setChapterSharePopupOpen(false)}
+              >
+                <TwitterIcon size={40} round />
+                <span>X (Twitter)</span>
+              </TwitterShareButton>
+
+              <button
+                type="button"
+                onClick={() => copyChapterShareLink('tiktok')}
+                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black text-lg font-bold tracking-tight text-white ring-1 ring-white/20" aria-hidden>
+                  TT
+                </span>
+                <span>TikTok</span>
+              </button>
+
+              <TelegramShareButton
+                url={chapterShareUrl}
+                title={chapterShareTitle}
+                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
+                resetButtonStyle={false}
+                onClick={() => setChapterSharePopupOpen(false)}
+              >
+                <TelegramIcon size={40} round />
+                <span>Telegram</span>
+              </TelegramShareButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Login Modal */}
+      <LoginModal
+        open={loginOpen}
+        onClose={() => {
+          setLoginOpen(false);
+          setPendingChapterSlug(null);
+        }}
+        onSuccess={async () => {
+          setLoginOpen(false);
+          if (pendingChapterSlug) {
+            const targetSlug = pendingChapterSlug;
+            setPendingChapterSlug(null);
+            navigate(`/view/${targetSlug}`);
+            return;
+          }
+          await fetchChapterData();
+        }}
       />
     </div>
   );

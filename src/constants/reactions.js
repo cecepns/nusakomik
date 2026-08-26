@@ -1,10 +1,16 @@
+import senangImg from '../assets/votes/senang.png';
+import biasaAjaImg from '../assets/votes/biasa-aja.png';
+import kecewaImg from '../assets/votes/kecewa.png';
+import marahImg from '../assets/votes/marah.png';
+import sedihImg from '../assets/votes/sedih.png';
+
 /** Backend vote_type / chapter reaction_type keys (unchanged for API compatibility). */
 export const REACTION_OPTIONS = [
-  { id: 'senang', emoji: '😍', label: 'Love' },
-  { id: 'biasaAja', emoji: '😝', label: 'Funny' },
-  { id: 'kecewa', emoji: '😯', label: 'Surprised' },
-  { id: 'marah', emoji: '😡', label: 'Angry' },
-  { id: 'sedih', emoji: '😭', label: 'Sad' },
+  { id: 'senang', label: 'Senang', image: senangImg },
+  { id: 'biasaAja', label: 'Biasa Aja', image: biasaAjaImg },
+  { id: 'kecewa', label: 'Kecewa', image: kecewaImg },
+  { id: 'marah', label: 'Marah', image: marahImg },
+  { id: 'sedih', label: 'Sedih', image: sedihImg },
 ];
 
 export const emptyReactionCounts = () =>

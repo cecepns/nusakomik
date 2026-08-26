@@ -4,11 +4,28 @@ const { upload } = require('../middlewares/upload'); // used in routes, not here
 const { deleteFile, resolveLocalUploadPath } = require('../utils/files');
 const { uploadFileToS3 } = require('../utils/s3Upload');
 const { deleteUrlFromS3 } = require('../utils/s3Upload');
+const {
+  isIkiruCdnUrl,
+  isYuuCdnUrl,
+  isCdnapUrl,
+  getIkiruCdnFetchHeaders,
+  isPromoIkiruResponse,
+  isYuuCdnPromoResponse,
+  toProxiedImagePathIfNeeded,
+  IKIRU_CDN_PROXY,
+  YUUCDN_PROXY,
+} = require('../utils/ikiruCdnImage');
+const {
+  CHAPTER_RELEASED_WHERE,
+  parseScheduledReleaseAt,
+  isScheduledReleaseInFuture,
+  refreshMangaChapterActivity,
+} = require('../utils/chapterRelease');
+const { invalidateContentsCaches } = require('./ContentsController');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const AdmZip = require('adm-zip');
-
 const guessImageExtension = (imagePath, contentType) => {
   if (contentType) {
     if (contentType.includes('png')) return '.png';
@@ -41,29 +58,154 @@ const loadImageZipEntry = async (imagePath, index) => {
     return null;
   }
 
-  const absoluteUrl =
-    imagePath.startsWith('http://') || imagePath.startsWith('https://')
-      ? imagePath
-      : null;
+  let absoluteUrl = null;
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+    absoluteUrl = imagePath;
+  } else if (imagePath.startsWith('/')) {
+    // Relative path but not local uploads folder, assume S3 CDN / public origin
+    const cdnBase = process.env.S3_ENDPOINT || 'https://data.cdnesia.my.id';
+    absoluteUrl = `${cdnBase.replace(/\/+$/, '')}${imagePath}`;
+  }
 
   if (!absoluteUrl) return null;
 
-  try {
-    const response = await axios.get(absoluteUrl, {
-      responseType: 'arraybuffer',
-      timeout: 45000,
-      maxRedirects: 5,
-      validateStatus: (status) => status >= 200 && status < 300,
-    });
-    const ext = guessImageExtension(absoluteUrl, response.headers['content-type']);
-    return {
-      name: `${pageName}${ext}`,
-      buffer: Buffer.from(response.data),
-    };
-  } catch (err) {
-    console.warn(`Failed fetching image for zip (${absoluteUrl}):`, err.message);
+  const isIkiru = isIkiruCdnUrl(absoluteUrl);
+  const isYuu = isIkiru && isYuuCdnUrl(absoluteUrl);
+  const isCdnap = isCdnapUrl(absoluteUrl);
+
+  let response;
+  let directFailedOrPromo = false;
+
+  // For YuuCDN: route request through the Cloudflare Worker to bypass VPS IP block / referrer check
+  if (isYuu) {
+    const yuuWorkerUrl = process.env.YUUCDN_WORKER_URL || 'https://proxy.cdnesia.my.id';
+    let yuuFetchUrl = absoluteUrl;
+    if (yuuWorkerUrl) {
+      try {
+        const u = new URL(absoluteUrl);
+        const workerBase = yuuWorkerUrl.replace(/\/+$/, '');
+        yuuFetchUrl = `${workerBase}${u.pathname}${u.search}`;
+        console.log(`[loadImageZipEntry] Routing Yuu fetch through Worker: ${yuuFetchUrl}`);
+      } catch (e) {
+        console.warn(`[loadImageZipEntry] Failed to parse target URL:`, e.message);
+      }
+    }
+
+    try {
+      response = await axios.get(yuuFetchUrl, {
+        responseType: 'arraybuffer',
+        timeout: 20000,
+        maxRedirects: 5,
+        validateStatus: (status) => status >= 200 && status < 300,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        },
+      });
+
+      const finalUrl = response.request?.res?.responseUrl || absoluteUrl;
+      if (isYuu && isYuuCdnPromoResponse(finalUrl, absoluteUrl)) {
+        directFailedOrPromo = true;
+        response = null;
+      }
+    } catch (err) {
+      directFailedOrPromo = true;
+    }
+  } else if (isCdnap) {
+    // For cdnap.site: fetch directly using the residential proxy (YUUCDN_PROXY) to bypass Cloudflare challenge/bot mode
+    try {
+      const yuuProxyUrl = YUUCDN_PROXY || IKIRU_CDN_PROXY || process.env.OUTBOUND_PROXY || '';
+      let yuuAgent = null;
+      if (yuuProxyUrl) {
+        try {
+          const { HttpsProxyAgent } = require('https-proxy-agent');
+          yuuAgent = new HttpsProxyAgent(yuuProxyUrl);
+        } catch (e) { }
+      }
+      response = await axios.get(absoluteUrl, {
+        responseType: 'arraybuffer',
+        timeout: 20000,
+        maxRedirects: 5,
+        validateStatus: (status) => status >= 200 && status < 300,
+        headers: getIkiruCdnFetchHeaders('https://01.apkomik.com/', absoluteUrl),
+        ...(yuuAgent ? { httpsAgent: yuuAgent } : {}),
+      });
+    } catch (err) {
+      console.warn(`[loadImageZipEntry] Failed to fetch cdnap URL via proxy:`, err.message);
+      directFailedOrPromo = true;
+    }
+  } else {
+    // Normal S3 CDN / direct URLs
+    try {
+      response = await axios.get(absoluteUrl, {
+        responseType: 'arraybuffer',
+        timeout: 20000,
+        maxRedirects: 5,
+        validateStatus: (status) => status >= 200 && status < 300,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        },
+      });
+    } catch (err) {
+      console.warn(`[loadImageZipEntry] Direct fetch failed for ${absoluteUrl}:`, err.message);
+      directFailedOrPromo = true;
+    }
+  }
+
+  // Fallback to proxy or generic fetch if direct failed/redirected
+  if (!response || directFailedOrPromo) {
+    const useProxyNow = isIkiru && !isYuu;
+    let httpsAgent = null;
+    const proxyUrl = IKIRU_CDN_PROXY || process.env.OUTBOUND_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
+    if (proxyUrl && useProxyNow) {
+      try {
+        const { HttpsProxyAgent } = require('https-proxy-agent');
+        httpsAgent = new HttpsProxyAgent(proxyUrl);
+      } catch { }
+    }
+
+    try {
+      let refererHeader = 'https://komiknesia.com/';
+      try {
+        const u = new URL(absoluteUrl);
+        refererHeader = `${u.origin}/`;
+      } catch {}
+
+      response = await axios.get(absoluteUrl, {
+        responseType: 'arraybuffer',
+        timeout: 45000,
+        maxRedirects: 5,
+        validateStatus: (status) => status >= 200 && status < 300,
+        headers: useProxyNow
+          ? getIkiruCdnFetchHeaders('https://v6.kiryuu.to/', absoluteUrl)
+          : {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Referer': refererHeader,
+          },
+        ...(httpsAgent ? { httpsAgent } : {})
+      });
+    } catch (err) {
+      console.warn(`Failed fetching image for zip (${absoluteUrl}):`, err.message);
+      return null;
+    }
+  }
+
+
+  const finalUrl = response.request?.res?.responseUrl || absoluteUrl;
+  const isPromo = isYuu
+    ? isYuuCdnPromoResponse(finalUrl, absoluteUrl)
+    : isPromoIkiruResponse(finalUrl, absoluteUrl);
+  if (isPromo) {
+    console.warn(`Skipped promo image for zip (${absoluteUrl})`);
     return null;
   }
+
+  const ext = guessImageExtension(absoluteUrl, response.headers['content-type']);
+  return {
+    name: `${pageName}${ext}`,
+    buffer: Buffer.from(response.data),
+  };
 };
 
 const showBySlug = async (req, res) => {
@@ -78,6 +220,7 @@ const showBySlug = async (req, res) => {
         c.title,
         c.slug,
         c.manga_id,
+        c.scheduled_release_at,
         m.is_input_manual,
         m.slug as manga_slug,
         m.title as manga_title,
@@ -104,6 +247,13 @@ const showBySlug = async (req, res) => {
 
     if (chapters.length > 0) {
       const chapter = chapters[0];
+
+      if (isScheduledReleaseInFuture(chapter.scheduled_release_at)) {
+        return res.status(404).json({
+          status: false,
+          error: 'Chapter belum dirilis',
+        });
+      }
 
       try {
         await db.execute(
@@ -136,6 +286,8 @@ const showBySlug = async (req, res) => {
             c.title,
             c.slug,
             c.created_at,
+            c.scheduled_release_at,
+            UNIX_TIMESTAMP(COALESCE(c.scheduled_release_at, c.created_at)) as release_at_timestamp,
             UNIX_TIMESTAMP(c.created_at) as created_at_timestamp,
             COALESCE(c.views, 0) AS views,
             (
@@ -143,6 +295,7 @@ const showBySlug = async (req, res) => {
             ) AS reaction_count
           FROM chapters c
           WHERE c.manga_id = ?
+            AND ${CHAPTER_RELEASED_WHERE}
           ORDER BY CAST(c.chapter_number AS UNSIGNED) DESC, c.chapter_number DESC
         `,
           [chapter.manga_id]
@@ -159,7 +312,7 @@ const showBySlug = async (req, res) => {
         );
 
         const responseData = {
-          images: images.map((img) => img.image_path),
+          images: images.map((img) => toProxiedImagePathIfNeeded(img.image_path, req)),
           content: {
             id: chapter.manga_id,
             title: chapter.manga_title,
@@ -167,7 +320,7 @@ const showBySlug = async (req, res) => {
             alternative_name: null,
             author: chapter.manga_author || 'Unknown',
             sinopsis: chapter.manga_sinopsis || null,
-            cover: chapter.manga_cover || null,
+            cover: toProxiedImagePathIfNeeded(chapter.manga_cover || null, req),
             content_type: chapter.content_type || 'comic',
             country_id: chapter.country_id || null,
             color: !!chapter.color,
@@ -190,7 +343,7 @@ const showBySlug = async (req, res) => {
             views: Number(ch.views) || 0,
             reaction_count: Number(ch.reaction_count) || 0,
             created_at: {
-              time: parseInt(ch.created_at_timestamp, 10),
+              time: parseInt(ch.release_at_timestamp || ch.created_at_timestamp, 10),
               formatted: new Date(ch.created_at).toLocaleString('id-ID'),
             },
           })),
@@ -295,7 +448,7 @@ const create = async (req, res) => {
       cover = await uploadFileToS3(key, req.file.path, req.file.mimetype);
       try {
         fs.unlinkSync(req.file.path);
-      } catch {}
+      } catch { }
     }
 
     const [mangaRows] = await db.execute('SELECT slug FROM manga WHERE id = ?', [mangaId]);
@@ -311,6 +464,9 @@ const create = async (req, res) => {
       [mangaId, title, chapter_number, chapterSlug, cover]
     );
 
+    await refreshMangaChapterActivity(db, mangaId);
+    invalidateContentsCaches();
+
     res.status(201).json({ id: result.insertId, message: 'Chapter created successfully' });
   } catch (error) {
     console.error('Error creating chapter:', error);
@@ -321,7 +477,7 @@ const create = async (req, res) => {
 const update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, chapter_number } = req.body;
+    const { title, chapter_number, scheduled_release_at, release_mode, remove_cover } = req.body;
 
     const [chapterRows] = await db.execute('SELECT manga_id FROM chapters WHERE id = ?', [id]);
     if (chapterRows.length === 0) {
@@ -341,6 +497,11 @@ const update = async (req, res) => {
     let query = 'UPDATE chapters SET title = ?, chapter_number = ?, slug = ?';
     const params = [title, chapter_number, chapterSlug];
 
+    const wantsScheduled = release_mode === 'scheduled';
+    const parsedSchedule = wantsScheduled ? parseScheduledReleaseAt(scheduled_release_at) : null;
+    query += ', scheduled_release_at = ?';
+    params.push(parsedSchedule);
+
     if (req.file) {
       const ext = path.extname(req.file.originalname || req.file.filename || '') || '.webp';
       const key = `komiknesia/chapters/${chapterRows[0].manga_id}/cover-${Date.now()}${ext}`;
@@ -349,13 +510,18 @@ const update = async (req, res) => {
       params.push(url);
       try {
         fs.unlinkSync(req.file.path);
-      } catch {}
+      } catch { }
+    } else if (remove_cover === 'true' || remove_cover === true) {
+      query += ', cover = NULL';
     }
 
     query += ' WHERE id = ?';
     params.push(id);
 
     await db.execute(query, params);
+
+    await refreshMangaChapterActivity(db, chapterRows[0].manga_id);
+    invalidateContentsCaches();
 
     res.json({ message: 'Chapter updated successfully' });
   } catch (error) {
@@ -408,6 +574,8 @@ const destroy = async (req, res) => {
     }
 
     await db.execute('DELETE FROM chapters WHERE id = ?', [id]);
+    await refreshMangaChapterActivity(db, chapter.manga_id);
+    invalidateContentsCaches();
     res.json({ message: 'Chapter deleted successfully' });
   } catch (error) {
     console.error('Error deleting chapter:', error);
@@ -424,7 +592,12 @@ const listImages = async (req, res) => {
       [chapterId]
     );
 
-    res.json(images);
+    res.json(
+      images.map((img) => ({
+        ...img,
+        image_path: toProxiedImagePathIfNeeded(img.image_path, req),
+      }))
+    );
   } catch (error) {
     console.error('Error fetching chapter images:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -453,7 +626,7 @@ const uploadImages = async (req, res) => {
       const url = await uploadFileToS3(key, file.path, file.mimetype);
       try {
         fs.unlinkSync(file.path);
-      } catch {}
+      } catch { }
       return db.execute(
         'INSERT INTO chapter_images (chapter_id, image_path, page_number) VALUES (?, ?, ?)',
         [chapterId, url, startPageNumber + index]
@@ -607,7 +780,7 @@ const reorderImages = async (req, res) => {
     if (connection) {
       try {
         await connection.rollback();
-      } catch {}
+      } catch { }
     }
     console.error('Error reordering chapter images:', error);
     res.status(500).json({
@@ -632,6 +805,7 @@ const downloadBySlug = async (req, res) => {
         c.chapter_number as number,
         c.title,
         c.slug,
+        c.scheduled_release_at,
         m.is_input_manual,
         m.slug as manga_slug,
         m.title as manga_title
@@ -647,8 +821,8 @@ const downloadBySlug = async (req, res) => {
     }
 
     const chapter = chapters[0];
-    if (!chapter.is_input_manual) {
-      return res.status(400).json({ error: 'Download hanya tersedia untuk komik manual' });
+    if (isScheduledReleaseInFuture(chapter.scheduled_release_at)) {
+      return res.status(404).json({ error: 'Chapter belum dirilis' });
     }
 
     const [images] = await db.execute(

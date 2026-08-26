@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Hop as Home, BookOpen, List, FileText, Menu, X, ChartBar as BarChart3, Star, Mail, LogOut, CloudDownload, Users, ReceiptText, Sticker } from 'lucide-react';
+import { Hop as Home, BookOpen, List, FileText, Menu, X, ChartBar as BarChart3, Mail, LogOut, Users, ReceiptText, Sticker, Link2, Image as ImageIcon } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const AdminLayout = ({ children }) => {
@@ -18,11 +18,11 @@ const AdminLayout = ({ children }) => {
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/admin/dashboard' },
     { id: 'categories', label: 'Kategori', icon: List, path: '/admin/categories' },
     { id: 'manga', label: 'Manga', icon: BookOpen, path: '/admin/manga' },
-    { id: 'ikiru-sync', label: 'Ikiru Sync', icon: CloudDownload, path: '/admin/ikiru-sync' },
+    { id: 'banners', label: 'Banner Slider', icon: ImageIcon, path: '/admin/banners' },
+    { id: 'quick-links', label: 'Quick Links', icon: Link2, path: '/admin/quick-links' },
     { id: 'users', label: 'Users', icon: Users, path: '/admin/users' },
     { id: 'orders', label: 'Order Premium', icon: ReceiptText, path: '/admin/orders' },
     { id: 'stickers', label: 'Stiker', icon: Sticker, path: '/admin/stickers' },
-    { id: 'featured', label: 'Featured Items', icon: Star, path: '/admin/featured' },
     { id: 'ads', label: 'Iklan', icon: FileText, path: '/admin/ads' },
     { id: 'contact', label: 'Kontak', icon: Mail, path: '/admin/contact' },
   ];
@@ -46,7 +46,7 @@ const AdminLayout = ({ children }) => {
       } lg:translate-x-0 transition-transform duration-300 ease-in-out`}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700">
           <h1 className="text-xl font-bold text-primary-600 dark:text-primary-400">
-            Nusakomik Admin
+            Komiknesia Admin
           </h1>
           <button
             onClick={() => setSidebarOpen(false)}

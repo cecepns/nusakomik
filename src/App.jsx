@@ -6,19 +6,20 @@ import Login from "./pages/Login";
 import MangaDetail from "./pages/MangaDetail";
 import ChapterReader from "./pages/ChapterReader";
 import Library from "./pages/Library";
-import Popular from "./pages/Popular";
+import Populer from "./pages/Populer";
 import Content from "./pages/Content";
 import Contact from "./pages/Contact";
 import Akun from "./pages/Akun";
 import Leaderboard from "./pages/Leaderboard";
 import Premium from "./pages/Premium";
 import ProfileUser from "./pages/ProfileUser";
-import LandingPage from './pages/Landing'
+import Jadwal from "./pages/Jadwal";
+import Landing from "./pages/Landing"
 import ScrollToTop from "./components/ScrollToTop";
-import BottomNavigation from "./components/BottomNavigation";
 import AdPopup from "./components/AdPopup";
 import MbuhRedirectScript from "./components/MbuhRedirectScript";
 import ProtectedRoute from "./components/ProtectedRoute";
+import TurnstileGate from "./components/TurnstileGate";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -27,7 +28,6 @@ function AppContent() {
   const location = useLocation();
   const { user } = useAuth();
 
-  // Don't show AdPopup on admin and login routes
   const shouldShowAdPopup =
     !location.pathname.startsWith('/admin') &&
     location.pathname !== '/login' &&
@@ -37,99 +37,81 @@ function AppContent() {
     <>
       <ScrollToTop />
       <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route
-            path="/admin/*"
-            element={
-              <ProtectedRoute requireAdmin>
-                <Admin />
-              </ProtectedRoute>
-            }
-          />
+        <Route path="/login" element={<Login />} />
+        <Route path="/landing" element={<Landing />} />
+        <Route
+          path="/admin/*"
+          element={
+            <ProtectedRoute requireAdmin>
+              <Admin />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/view/:chapterSlug" element={<ChapterReader />} />
         <Route path="/komik/:slug" element={<MangaDetail />} />
         <Route path="/profile/:username" element={<ProfileUser />} />
         <Route
           path="/library"
           element={
-            <>
-              <Layout>
-                <Library />
-              </Layout>
-              <BottomNavigation />
-            </>
-          }
-        />
-        <Route
-          path="/content"
-          element={
-            <>
-              <Layout>
-                <Content />
-              </Layout>
-              <BottomNavigation />
-            </>
+            <Layout>
+              <Library />
+            </Layout>
           }
         />
         <Route
           path="/populer"
           element={
-            <>
-              <Layout>
-                <Popular />
-              </Layout>
-              <BottomNavigation />
-            </>
+            <Layout>
+              <Populer />
+            </Layout>
           }
         />
-        {/* <Route path="/daftar-komik" element={
-          <>
-            <ComingSoon title="Daftar Komik" />
-            <BottomNavigation />
-          </>
-        } /> */}
+        <Route
+          path="/jadwal"
+          element={
+            <Layout>
+              <Jadwal />
+            </Layout>
+          }
+        />
+        <Route
+          path="/content"
+          element={
+            <Layout>
+              <Content />
+            </Layout>
+          }
+        />
         <Route
           path="/akun"
           element={
-            <>
-              <Layout>
-                <Akun />
-              </Layout>
-              <BottomNavigation />
-            </>
+            <Layout>
+              <Akun />
+            </Layout>
           }
         />
         <Route
           path="/leaderboard"
           element={
-            <>
-              <Layout>
-                <Leaderboard />
-              </Layout>
-              <BottomNavigation />
-            </>
+            <Layout>
+              <Leaderboard />
+            </Layout>
           }
         />
         <Route
           path="/premium"
           element={
-            <>
-              <Layout>
-                <Premium />
-              </Layout>
-              <BottomNavigation />
-            </>
+            <Layout>
+              <Premium />
+            </Layout>
           }
         />
         <Route
           path="/contact"
           element={
-            <>
-              <Layout>
-                <Contact />
-              </Layout>
-              <BottomNavigation />
-            </>
+            <Layout>
+              <Contact />
+            </Layout>
           }
         />
         <Route
@@ -141,7 +123,6 @@ function AppContent() {
           }
         />
       </Routes>
-      {/* AdPopup rendered once for all routes except admin and login */}
       {shouldShowAdPopup && <AdPopup />}
       <MbuhRedirectScript />
       <ToastContainer position="top-right" autoClose={2500} theme="colored" />
@@ -149,15 +130,15 @@ function AppContent() {
   );
 }
 
-
-
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <AppContent />
-      </Router>
-    </AuthProvider>
+    <TurnstileGate>
+      <AuthProvider>
+        <Router>
+          <AppContent />
+        </Router>
+      </AuthProvider>
+    </TurnstileGate>
   );
 }
 

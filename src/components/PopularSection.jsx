@@ -1,309 +1,311 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useIsMdUp } from "../hooks/useIsMdUp";
-import { Link, useNavigate } from "react-router-dom";
-import { ChevronRight, Flame, LayoutGrid, List, Lock } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { ChevronLeft, ChevronRight, Star } from "lucide-react";
 import LazyImage from "./LazyImage";
 import { apiClient, getImageUrl } from "../utils/api";
-import { getChapterTimeAgo } from "../utils/chapterTime";
-import { useChapterLoginGate } from "../hooks/useChapterLoginGate";
-import LoginPopup from "./LoginPopup";
 
-/** Sama dengan Content.jsx — filter tidak aktif & CTA sky */
-const contentBtnTrans = "transition-all duration-200";
-const contentFilterInactive = `rounded-xl border ${contentBtnTrans} border-slate-200 bg-slate-50 text-slate-700 shadow-[0_3px_0_0_#e2e8f0] hover:-translate-y-0.5 hover:shadow-[0_4px_0_0_#cbd5e1] active:translate-y-px active:shadow-[0_2px_0_0_#e2e8f0] dark:border-primary-600 dark:bg-primary-800 dark:text-gray-200 dark:shadow-[0_3px_0_0_#1e3a5f] dark:hover:bg-primary-800`;
-const contentCtaClearAll = `rounded-xl border border-sky-500/25 bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_5px_0_0_#0369a1] ${contentBtnTrans} hover:-translate-y-0.5 hover:shadow-[0_6px_0_0_#0369a1] active:translate-y-0.5 active:shadow-[0_3px_0_0_#0369a1] dark:border-cyan-200/20 dark:bg-[#0a2d52] dark:text-cyan-50 dark:shadow-[0_5px_0_0_#0ea5e9] dark:hover:shadow-[0_6px_0_0_#38bdf8] dark:active:shadow-[0_3px_0_0_#0369a1] dark:hover:brightness-110`;
-
-const MOBILE_HOME_SECTION_CAP = 14;
+/** Render ★ rating */
+const RatingStars = ({ rating }) => {
+  const val = Number(rating) || 0;
+  const full = Math.floor(val / 2);
+  const half = val / 2 - full >= 0.25;
+  const empty = 5 - full - (half ? 1 : 0);
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-0.5">
+        {Array.from({ length: full }, (_, i) => (
+          <Star key={`f${i}`} className="h-3 w-3 fill-amber-400 text-amber-400" />
+        ))}
+        {half && (
+          <Star key="h" className="h-3 w-3 text-amber-400" style={{ clipPath: 'inset(0 50% 0 0)', fill: '#fbbf24' }} />
+        )}
+        {Array.from({ length: empty }, (_, i) => (
+          <Star key={`e${i}`} className="h-3 w-3 text-gray-600" />
+        ))}
+      </span>
+      <span className="ml-1 text-[11px] font-medium text-gray-400">{val.toFixed(1)}</span>
+    </span>
+  );
+};
 
 const PopularSection = () => {
   const navigate = useNavigate();
-  const [filteredManga, setFilteredManga] = useState([]);
+  const [manga, setManga] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [cardLayout, setCardLayout] = useState("vertical");
-  const [popularRange, setPopularRange] = useState("all");
-  const isMdUp = useIsMdUp();
-  const { isChapterLocked, guardChapterClick, loginPopupProps } = useChapterLoginGate();
+  const [activeIndex, setActiveIndex] = useState(0);
+  const isInitialScrolledRef = useRef(false);
 
-  const visibleManga = useMemo(
-    () => (isMdUp ? filteredManga : filteredManga.slice(0, MOBILE_HOME_SECTION_CAP)),
-    [isMdUp, filteredManga],
-  );
+  const scrollRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const scrollLeftRef = useRef(0);
+  const dragDistanceRef = useRef(0);
+
+  // Repeat manga 3 times for true 360-degree infinite looping without empty gaps
+  const displayItems = manga.length > 0 ? [...manga, ...manga, ...manga] : [];
 
   const fetchPopularManga = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        page: "1",
-        per_page: "15",
-        orderBy: "Popular",
-      });
-      if (popularRange === "day") params.append("popularWindow", "day");
-      else if (popularRange === "week") params.append("popularWindow", "week");
-      else if (popularRange === "month") params.append("popularWindow", "month");
-
-      const res = await fetch(
-        `https://api-be.komiknesia.my.id/api/contents?${params.toString()}`
-      );
-      const response = await res.json();
-      setFilteredManga(response.data || []);
+      const payload = { page: 1, per_page: 10, orderBy: "Popular", popularWindow: "day" };
+      const response = await apiClient.getContents(payload);
+      const items = response.data || [];
+      setManga(items);
+      if (items.length > 0) {
+        setActiveIndex(items.length); // Start at middle clone set
+      }
     } catch (error) {
       console.error("Error fetching popular manga:", error);
-      setFilteredManga([]);
+      setManga([]);
     } finally {
       setLoading(false);
     }
-  }, [popularRange]);
+  }, []);
 
   useEffect(() => {
     fetchPopularManga();
   }, [fetchPopularManga]);
 
-  return (
-    <div className="mb-12">
-      {/* Section Header */}
-      <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="bg-gradient-to-r from-red-500 to-orange-500 p-2 rounded-lg">
-            <Flame className="h-6 w-6 text-white" />
+  // Smooth scroll to card at index
+  const scrollToCard = useCallback((index, smooth = true) => {
+    if (!scrollRef.current) return;
+    const container = scrollRef.current;
+    const children = Array.from(container.children);
+    if (!children[index]) return;
+    const targetCard = children[index];
+    const containerWidth = container.clientWidth;
+    const cardLeft = targetCard.offsetLeft;
+    const cardWidth = targetCard.offsetWidth;
+    const targetScroll = cardLeft - containerWidth / 2 + cardWidth / 2;
+
+    container.scrollTo({
+      left: Math.max(0, targetScroll),
+      behavior: smooth ? "smooth" : "auto",
+    });
+    setActiveIndex(index);
+  }, []);
+
+  // Initial scroll alignment on middle clone set
+  useEffect(() => {
+    if (manga.length > 0 && scrollRef.current && !isInitialScrolledRef.current) {
+      isInitialScrolledRef.current = true;
+      setTimeout(() => {
+        scrollToCard(manga.length, false);
+      }, 50);
+    }
+  }, [manga.length, scrollToCard]);
+
+  // Update active index based on scroll position & handle seamless infinite bounds jump
+  const updateActiveIndexOnScroll = useCallback(() => {
+    if (!scrollRef.current || manga.length === 0) return;
+    const container = scrollRef.current;
+    const containerCenter = container.scrollLeft + container.clientWidth / 2;
+    const children = Array.from(container.children);
+    let closestIndex = 0;
+    let minDistance = Infinity;
+
+    children.forEach((child, index) => {
+      const childCenter = child.offsetLeft + child.offsetWidth / 2;
+      const distance = Math.abs(childCenter - containerCenter);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = index;
+      }
+    });
+
+    setActiveIndex(closestIndex);
+
+    // Seamless infinite reset when entering prefix or suffix sets
+    const total = manga.length;
+    if (closestIndex < total) {
+      const targetIndex = closestIndex + total;
+      const targetCard = children[targetIndex];
+      if (targetCard) {
+        const targetScroll = targetCard.offsetLeft - container.clientWidth / 2 + targetCard.offsetWidth / 2;
+        container.scrollLeft = targetScroll;
+        setActiveIndex(targetIndex);
+      }
+    } else if (closestIndex >= 2 * total) {
+      const targetIndex = closestIndex - total;
+      const targetCard = children[targetIndex];
+      if (targetCard) {
+        const targetScroll = targetCard.offsetLeft - container.clientWidth / 2 + targetCard.offsetWidth / 2;
+        container.scrollLeft = targetScroll;
+        setActiveIndex(targetIndex);
+      }
+    }
+  }, [manga.length]);
+
+  // Auto slide interval (every 4 seconds)
+  useEffect(() => {
+    if (manga.length <= 1) return;
+    const timer = setInterval(() => {
+      if (!isDraggingRef.current) {
+        setActiveIndex((prev) => {
+          const nextIdx = prev + 1;
+          scrollToCard(nextIdx, true);
+          return nextIdx;
+        });
+      }
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [manga.length, scrollToCard]);
+
+  // Mouse Drag handlers
+  const handleMouseDown = (e) => {
+    if (!scrollRef.current) return;
+    isDraggingRef.current = true;
+    dragDistanceRef.current = 0;
+    startXRef.current = e.pageX - scrollRef.current.offsetLeft;
+    scrollLeftRef.current = scrollRef.current.scrollLeft;
+  };
+
+  const handleMouseLeave = () => {
+    isDraggingRef.current = false;
+  };
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false;
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDraggingRef.current || !scrollRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - scrollRef.current.offsetLeft;
+    const walk = (x - startXRef.current) * 1.5;
+    dragDistanceRef.current = Math.abs(walk);
+    scrollRef.current.scrollLeft = scrollLeftRef.current - walk;
+  };
+
+  const handlePrev = () => {
+    if (manga.length === 0) return;
+    scrollToCard(activeIndex - 1, true);
+  };
+
+  const handleNext = () => {
+    if (manga.length === 0) return;
+    scrollToCard(activeIndex + 1, true);
+  };
+
+  if (loading) {
+    return (
+      <div className="mb-12">
+        <div className="flex justify-center mb-6">
+          <div className="inline-flex items-center gap-2 rounded-full border border-pink-500/30 bg-[#12121a] px-5 py-2 shadow-lg">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-tr from-pink-500 to-red-500 text-xs">🔥</span>
+            <span className="text-sm font-bold text-white tracking-wide">Popular Today</span>
           </div>
-          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">
-            Populer
-          </h2>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div
-            className="flex flex-wrap gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-primary-600 dark:bg-primary-800/80"
-            role="group"
-            aria-label="Rentang popularitas"
-          >
-            {[
-              { id: "all", label: "Sepanjang masa" },
-              { id: "day", label: "Harian" },
-              { id: "week", label: "Mingguan" },
-              { id: "month", label: "Bulanan" },
-            ].map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setPopularRange(id)}
-                className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all sm:px-3 sm:text-sm ${
-                  popularRange === id
-                    ? "bg-sky-600 text-white shadow-[0_2px_0_0_#0369a1] dark:bg-[#0b355f] dark:text-cyan-50 dark:shadow-[0_2px_0_0_#38bdf8]"
-                    : "text-slate-700 hover:bg-white dark:text-gray-200 dark:hover:bg-primary-700"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() =>
-              setCardLayout((prev) =>
-                prev === "vertical" ? "horizontal" : "vertical",
-              )
-            }
-            className={`inline-flex h-10 w-10 shrink-0 items-center justify-center ${contentFilterInactive}`}
-            title={
-              cardLayout === "vertical"
-                ? "Tampilan baris (horizontal)"
-                : "Tampilan grid (vertical)"
-            }
-            aria-label={
-              cardLayout === "vertical"
-                ? "Ubah ke tampilan baris"
-                : "Ubah ke tampilan grid"
-            }
-          >
-            {cardLayout === "vertical" ? (
-              <List className="h-5 w-5" aria-hidden />
-            ) : (
-              <LayoutGrid className="h-5 w-5" aria-hidden />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate("/content")}
-            className={`group inline-flex items-center gap-1.5 ${contentCtaClearAll}`}
-          >
-            Lihat semua
-            <ChevronRight
-              className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5"
-              aria-hidden
-            />
-          </button>
+        <div className="text-center py-12 bg-gray-900/40 rounded-2xl border border-gray-800 max-w-xl mx-auto">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-sky-400 mx-auto"></div>
+          <p className="text-gray-400 mt-4 text-sm">Memuat komik populer hari ini...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (manga.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="lg:mb-12 relative min-h-[440px] sm:min-h-[490px] md:min-h-[520px]">
+      {/* Centered Pill Header Badge "Popular Today" */}
+      <div className="flex justify-center mb-6">
+        <div className="inline-flex items-center gap-2 rounded-full border border-pink-500/30 bg-[#12121a] px-5 py-2 shadow-lg shadow-pink-950/20 backdrop-blur-md">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-tr from-pink-500 via-rose-500 to-red-500 text-xs shadow-md">
+            🔥
+          </span>
+          <span className="text-sm sm:text-base font-bold text-white tracking-wide">
+            Popular Today
+          </span>
         </div>
       </div>
 
-      {/* Manga Grid */}
-      {loading ? (
-        <div className="text-center py-12 bg-gray-100 dark:bg-primary-900 rounded-lg">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto"></div>
-          <p className="text-gray-500 dark:text-gray-400 mt-4">Memuat...</p>
-        </div>
-      ) : filteredManga.length === 0 ? (
-        <div className="text-center py-12 bg-gray-100 dark:bg-primary-900 rounded-lg">
-          <p className="text-gray-500 dark:text-gray-400">
-            Tidak ada manga populer
-          </p>
-        </div>
-      ) : (
-        <div
-          className={
-            cardLayout === "vertical"
-              ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 gap-4"
-              : "flex flex-col gap-3"
-          }
+      {/* Slider Container with Left & Right Arrow Buttons */}
+      <div className="relative w-full overflow-hidden">
+        {/* Left Arrow Button */}
+        <button
+          type="button"
+          onClick={handlePrev}
+          className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-black/80 text-white shadow-2xl border border-white/20 hover:bg-gradient-to-r hover:from-sky-400 hover:to-blue-600 hover:scale-110 active:scale-95 transition-all"
+          aria-label="Previous"
         >
-          {visibleManga.map((manga) => (
-            <div
-              key={manga.id}
-              onClick={() => navigate(`/komik/${manga.slug}`)}
-              className={`bg-white dark:bg-primary-900 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer ${
-                cardLayout === "horizontal"
-                  ? "flex flex-row gap-3 p-3 sm:gap-4 sm:p-4"
-                  : "flex flex-col"
-              }`}
-            >
-              {/* Cover Image */}
+          <ChevronLeft className="h-6 w-6" />
+        </button>
+
+        {/* Right Arrow Button */}
+        <button
+          type="button"
+          onClick={handleNext}
+          className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-black/80 text-white shadow-2xl border border-white/20 hover:bg-gradient-to-r hover:from-sky-400 hover:to-blue-600 hover:scale-110 active:scale-95 transition-all"
+          aria-label="Next"
+        >
+          <ChevronRight className="h-6 w-6" />
+        </button>
+
+        {/* Horizontal Drag/Scroll Container */}
+        <div
+          ref={scrollRef}
+          onScroll={updateActiveIndexOnScroll}
+          onMouseDown={handleMouseDown}
+          onMouseLeave={handleMouseLeave}
+          onMouseUp={handleMouseUp}
+          onMouseMove={handleMouseMove}
+          className="flex items-center gap-4 sm:gap-6 lg:gap-8 overflow-x-auto py-10 px-[calc(50vw-95px)] sm:px-[calc(50vw-105px)] md:px-[calc(50vw-120px)] lg:px-[calc(50vw-140px)] h-[410px] sm:h-[440px] md:h-[470px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden snap-x snap-mandatory cursor-grab active:cursor-grabbing select-none"
+        >
+          {displayItems.map((item, index) => {
+            const isActive = index === activeIndex;
+            const latestCh = item?.lastChapters?.[0];
+
+            return (
               <div
-                className={
-                  cardLayout === "vertical"
-                    ? "relative aspect-[3/4] overflow-hidden"
-                    : "relative aspect-[3/4] w-[5.5rem] shrink-0 overflow-hidden rounded-md sm:w-28"
-                }
-              >
-                <LazyImage
-                  src={getImageUrl(manga.cover)}
-                  alt={manga.title}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                  wrapperClassName="w-full h-full"
-                />
-
-                {/* Gradient Overlay */}
-                {/* <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" /> */}
-
-                {/* Country Flag */}
-                {/* <div className="absolute top-2 right-2 text-2xl bg-white/90 dark:bg-primary-900/90 rounded-full w-8 h-8 flex items-center justify-center shadow-lg">
-                  {countryFlags[manga.country_id] || "🌍"}
-                </div> */}
-
-                {/* Color Badge */}
-                {/* {manga.color && (
-                  <div className="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded-md text-xs font-bold flex items-center space-x-1">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14a6 6 0 110-12 6 6 0 010 12z"/>
-                    </svg>
-                    <span>COLOR</span>
-                  </div>
-                )} */}
-
-                {/* Rating Badge */}
-                {manga.rating > 0 && (
-                  <div className="absolute top-2 left-2 h-8 w-8 rounded-full bg-yellow-500/95 text-white shadow-lg backdrop-blur-sm flex items-center justify-center">
-                    <span className="text-[11px] font-bold leading-none">
-                      {Number(manga.rating).toFixed(1)}
-                    </span>
-                  </div>
-                )}
-
-                {/* Hot Badge */}
-                {manga.hot && (
-                  <div className="absolute bottom-2 left-2">
-                    <Flame className="h-5 w-5 text-red-500 filter drop-shadow-lg" />
-                  </div>
-                )}
-              </div>
-
-              {/* Info Section */}
-              <div
-                className={
-                  cardLayout === "vertical"
-                    ? "p-3 flex flex-col h-[192px]"
-                    : "flex min-w-0 flex-1 flex-col justify-between gap-2 py-0.5"
-                }
-              >
-                {/* Title */}
-                <div
-                  className={
-                    cardLayout === "vertical"
-                      ? "min-h-[2.75rem] md:min-h-[3rem] mb-2 flex items-center"
-                      : "mb-0 flex items-start"
+                key={`${item.id}-${index}`}
+                onClick={() => {
+                  if (dragDistanceRef.current > 10) return;
+                  if (isActive) {
+                    navigate(`/komik/${item.slug}`);
+                  } else {
+                    scrollToCard(index, true);
                   }
-                >
-                  <Link
-                    to={`/komik/${manga.slug}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="block w-full"
-                  >
-                    <h3
-                      className={`font-bold line-clamp-2 text-gray-900 transition-colors hover:text-blue-600 dark:text-gray-100 dark:hover:text-blue-400 ${
-                        cardLayout === "vertical" ? "text-sm" : "text-sm sm:text-base"
-                      }`}
-                    >
-                      {manga.title}
-                    </h3>
-                  </Link>
+                }}
+                className={`relative shrink-0 overflow-hidden rounded-2xl bg-[#1e1e26] border transition-all duration-300 flex flex-col justify-between select-none snap-center h-[330px] sm:h-[360px] md:h-[380px] w-[52vw] max-w-[200px] sm:w-[230px] md:w-[260px] lg:w-[280px] ${isActive
+                  ? "-translate-y-3.5 z-10 border-sky-400/80 ring-2 ring-sky-500/50 shadow-2xl shadow-sky-950/60 opacity-100 cursor-pointer"
+                  : "translate-y-0 z-0 opacity-60 hover:opacity-85 border-white/10 cursor-pointer"
+                  }`}
+              >
+                {/* Cover */}
+                <div className="relative aspect-[3/4] w-full flex-1 overflow-hidden bg-gray-950">
+                  <LazyImage
+                    src={getImageUrl(item.cover)}
+                    alt={item.title}
+                    className="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
+                    wrapperClassName="h-full w-full"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#1e1e26] via-transparent to-transparent opacity-60" />
                 </div>
-                
-                {manga.lastChapters?.length > 0 ? (
-                  <div
-                    className={
-                      cardLayout === "vertical"
-                        ? "mb-1 mt-auto space-y-2"
-                        : "flex flex-col gap-1.5 sm:gap-2"
-                    }
-                  >
-                    {manga.lastChapters.slice(0, 3).map((chapter) => {
-                      const locked = isChapterLocked(chapter, manga.lastChapters);
-                      return (
-                      <Link
-                        key={chapter.slug}
-                        to={`/view/${chapter.slug}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          guardChapterClick(e, chapter, manga.lastChapters);
-                        }}
-                        className={`flex w-full items-center justify-between rounded-lg border-l-2 bg-gray-100 text-left text-gray-700 transition-colors hover:bg-gray-200 dark:bg-primary-800/70 dark:text-gray-300 dark:hover:bg-primary-700 ${
-                          locked
-                            ? "border-amber-500 ring-1 ring-amber-500/25"
-                            : "border-blue-500"
-                        } ${
-                          cardLayout === "vertical"
-                            ? "px-2.5 py-2 text-xs"
-                            : "px-2 py-1.5 text-[11px] sm:px-2.5 sm:py-2 sm:text-xs"
-                        }`}
-                      >
-                        <span className="font-semibold inline-flex items-center gap-1">
-                          Chapter {chapter.number || "N/A"}
-                          {locked && (
-                            <Lock className="h-3 w-3 shrink-0 text-amber-500" aria-hidden />
-                          )}
-                        </span>
-                        {getChapterTimeAgo(chapter) && (
-                          <span className="text-[11px] md:text-xs text-gray-500 dark:text-gray-400">
-                            {getChapterTimeAgo(chapter)}
-                          </span>
-                        )}
-                      </Link>
-                    );
-                    })}
+
+                {/* Card Footer Info */}
+                <div className="p-2.5 sm:p-3.5 lg:p-4 flex flex-col justify-between bg-[#1e1e26] h-[85px] sm:h-[95px] lg:h-[105px] shrink-0">
+                  <div>
+                    <h3 className={`font-bold line-clamp-1 leading-snug transition-colors ${isActive ? 'text-white text-xs sm:text-sm md:text-base lg:text-lg' : 'text-gray-300 text-[11px] sm:text-xs lg:text-sm'}`}>
+                      {item.title}
+                    </h3>
+                    <p className="text-[10px] sm:text-[11px] lg:text-xs text-gray-400 mt-0.5 sm:mt-1">
+                      Chapter {latestCh?.number || "N/A"}
+                    </p>
                   </div>
-                ) : (
-                  <div
-                    className={`text-xs text-gray-500 dark:text-gray-500 ${
-                      cardLayout === "vertical" ? "mb-1 mt-auto" : ""
-                    }`}
-                  >
-                    Chapter N/A
+
+                  <div className="mt-1.5 pt-1.5 border-t border-white/5 flex items-center justify-between">
+                    <RatingStars rating={item.rating} />
                   </div>
-                )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-      )}
-      <LoginPopup {...loginPopupProps} />
+      </div>
     </div>
   );
 };

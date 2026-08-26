@@ -1,5 +1,6 @@
 const db = require('../db');
 const { recordMangaViewEvent } = require('../utils/recordMangaViewEvent');
+const { CHAPTER_RELEASED_WHERE } = require('../utils/chapterRelease');
 
 const detailBySlug = async (req, res) => {
   try {
@@ -41,6 +42,7 @@ const detailBySlug = async (req, res) => {
           c.chapter_number as number,
           c.title,
           c.slug,
+          c.cover,
           c.created_at,
           c.updated_at,
           COALESCE(c.views, 0) AS views,
@@ -48,9 +50,11 @@ const detailBySlug = async (req, res) => {
             SELECT COUNT(*) FROM chapter_reactions cr WHERE cr.chapter_id = c.id
           ) AS reaction_count,
           UNIX_TIMESTAMP(c.created_at) as created_at_timestamp,
-          UNIX_TIMESTAMP(COALESCE(c.updated_at, c.created_at)) as updated_at_timestamp
+          UNIX_TIMESTAMP(COALESCE(c.updated_at, c.created_at)) as updated_at_timestamp,
+          UNIX_TIMESTAMP(COALESCE(c.scheduled_release_at, c.created_at)) as release_at_timestamp
         FROM chapters c
         WHERE c.manga_id = ?
+          AND ${CHAPTER_RELEASED_WHERE}
         ORDER BY CAST(c.chapter_number AS UNSIGNED) DESC, c.chapter_number DESC
       `,
         [manga.id]
@@ -84,10 +88,12 @@ const detailBySlug = async (req, res) => {
             number: ch.number,
             title: ch.title || `Chapter ${ch.number}`,
             slug: ch.slug,
+            cover: ch.cover || null,
+            thumbnail: ch.cover || null,
             views: Number(ch.views) || 0,
             reaction_count: Number(ch.reaction_count) || 0,
             created_at: {
-              time: parseInt(ch.created_at_timestamp, 10),
+              time: parseInt(ch.release_at_timestamp || ch.created_at_timestamp, 10),
               formatted: new Date(ch.created_at).toLocaleString('id-ID', {
                 timeZone: 'Asia/Jakarta',
               }),

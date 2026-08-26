@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { MessageCircle, Send, Smile, X } from "lucide-react";
+import { MessageCircle, Send, Smile, X, Eye, EyeOff, Image as ImageIcon, Film } from "lucide-react";
 import { io } from "socket.io-client";
 import { API_BASE_URL_WITHOUT_API, apiClient, getImageUrl } from "../utils/api";
 import { useAuth } from "../contexts/AuthContext";
+import { useScrollHide } from "../hooks/useScrollHide";
 import vipProfileBanner from "../assets/gif/banner-vip.gif";
+import { toast } from "react-toastify";
 
 function getInitials(name, username) {
   const source = String(name || username || "U").trim();
@@ -83,6 +85,125 @@ function isVipUser(message) {
   return expiresAt.getTime() >= Date.now();
 }
 
+function SpoilerBlock({ content }) {
+  const [revealed, setRevealed] = useState(false);
+
+  if (!revealed) {
+    return (
+      <span
+        onClick={(e) => {
+          e.stopPropagation();
+          setRevealed(true);
+        }}
+        className="my-1.5 inline-flex items-center gap-1.5 rounded-xl bg-red-950/80 border border-red-700/60 px-2.5 py-1 text-xs font-bold text-red-300 hover:bg-red-900 transition-colors cursor-pointer select-none shadow-md"
+        title="Klik untuk membuka spoiler"
+      >
+        <EyeOff className="h-3.5 w-3.5 text-red-400 shrink-0" />
+        <span>SPOILER (Klik untuk membuka)</span>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      onClick={(e) => {
+        e.stopPropagation();
+        setRevealed(false);
+      }}
+      className="my-1.5 block rounded-xl bg-white/[0.05] border-l-4 border-red-500 p-2.5 text-xs sm:text-sm text-gray-200 cursor-pointer hover:bg-white/[0.08] transition-colors"
+      title="Klik untuk menyembunyikan spoiler"
+    >
+      <span className="text-[10px] font-extrabold uppercase tracking-wider text-red-400 mb-1 flex items-center gap-1 select-none">
+        <Eye className="h-3 w-3" /> SPOILER (Klik untuk tutup)
+      </span>
+      <span>{content}</span>
+    </span>
+  );
+}
+
+function parseFormattedText(text, keyPrefix = 'fmt') {
+  if (!text) return null;
+
+  // Handles both standard [img]path[/img] and unclosed img]path or img]path[/img
+  const regex = /\[?(img|b|i|s)\]([\s\S]*?)(?:\[\/\1\]|(?=\s|$|\[(?:img|b|i|s)\]))/gi;
+  const elements = [];
+  let lastIdx = 0;
+  let m;
+
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > lastIdx) {
+      elements.push(text.slice(lastIdx, m.index));
+    }
+    const tag = m[1].toLowerCase();
+    let val = m[2] ? m[2].trim() : '';
+    if (tag === 'img') {
+      val = val.replace(/\[\/?img\]?/gi, '').trim();
+    }
+    const key = `${keyPrefix}-${m.index}`;
+
+    if (tag === 'b') {
+      elements.push(<strong key={key} className="font-bold text-white">{val}</strong>);
+    } else if (tag === 'i') {
+      elements.push(<em key={key} className="italic">{val}</em>);
+    } else if (tag === 's') {
+      elements.push(<del key={key} className="line-through text-gray-400">{val}</del>);
+    } else if (tag === 'img') {
+      if (val) {
+        elements.push(
+          <div key={key} className="my-1.5 max-w-xs rounded-xl overflow-hidden border border-white/10 bg-black/50 shadow-md">
+            <img
+              src={getImageUrl(val)}
+              alt="Gambar Chat"
+              className="w-full h-auto max-h-60 object-contain block"
+              loading="lazy"
+            />
+          </div>
+        );
+      }
+    }
+    lastIdx = regex.lastIndex;
+  }
+
+  if (lastIdx < text.length) {
+    elements.push(text.slice(lastIdx));
+  }
+
+  return (
+    <span key={keyPrefix} className="whitespace-pre-wrap break-words">
+      {elements}
+    </span>
+  );
+}
+
+function parseBBCode(text) {
+  if (typeof text !== 'string') return text;
+
+  const spoilerRegex = /\[spoiler\]([\s\S]*?)\[\/spoiler\]/gi;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = spoilerRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(parseFormattedText(text.slice(lastIndex, match.index), `txt-${lastIndex}`));
+    }
+    const innerContent = match[1];
+    parts.push(
+      <SpoilerBlock
+        key={`spoiler-${match.index}`}
+        content={parseFormattedText(innerContent, `sp-inner-${match.index}`)}
+      />
+    );
+    lastIndex = spoilerRegex.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(parseFormattedText(text.slice(lastIndex), `txt-${lastIndex}`));
+  }
+
+  return parts.length > 0 ? parts : text;
+}
+
 function renderChatMessageBody(text) {
   const imagePath = parseStickerMessage(text);
   if (imagePath) {
@@ -98,7 +219,7 @@ function renderChatMessageBody(text) {
       </div>
     );
   }
-  return <p className="mt-1 text-gray-300 break-words">{text}</p>;
+  return <div className="mt-1 text-gray-300 text-xs sm:text-sm">{parseBBCode(text)}</div>;
 }
 
 const LiveChatWidget = () => {
@@ -110,6 +231,7 @@ const LiveChatWidget = () => {
   const [chatError, setChatError] = useState("");
   const [brokenAvatarIds, setBrokenAvatarIds] = useState(() => new Set());
   const chatListRef = useRef(null);
+  const textareaRef = useRef(null);
   const socketRef = useRef(null);
   const stickerToggleRef = useRef(null);
   const stickerTrayRef = useRef(null);
@@ -119,6 +241,79 @@ const LiveChatWidget = () => {
   const [stickers, setStickers] = useState([]);
   const [stickersLoading, setStickersLoading] = useState(false);
   const [stickersError, setStickersError] = useState("");
+
+  const insertBbCode = (openTag, closeTag) => {
+    const textarea = textareaRef.current;
+
+    // Direct text insertion if closeTag is empty string
+    if (closeTag === '') {
+      if (!textarea) {
+        setChatInput((prev) => `${prev}${openTag}`);
+        return;
+      }
+      const start = textarea.selectionStart || 0;
+      const end = textarea.selectionEnd || 0;
+      const newChatInput = chatInput.slice(0, start) + openTag + chatInput.slice(end);
+      setChatInput(newChatInput);
+      setTimeout(() => {
+        textarea.focus();
+        const newCursorPos = start + openTag.length;
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+      }, 0);
+      return;
+    }
+
+    const tagToClose = closeTag !== undefined ? closeTag : openTag;
+    if (!textarea) {
+      setChatInput((prev) => `${prev}[${openTag}][/${tagToClose}]`);
+      return;
+    }
+
+    const start = textarea.selectionStart || 0;
+    const end = textarea.selectionEnd || 0;
+    const selectedText = chatInput.slice(start, end);
+    const replacement = `[${openTag}]${selectedText}[/${tagToClose}]`;
+    const newChatInput = chatInput.slice(0, start) + replacement + chatInput.slice(end);
+
+    setChatInput(newChatInput);
+    setTimeout(() => {
+      textarea.focus();
+      const newCursorPos = start + openTag.length + 2 + selectedText.length;
+      textarea.setSelectionRange(newCursorPos, newCursorPos);
+    }, 0);
+  };
+
+  const handleUploadImageFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('File harus berupa gambar');
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const toastId = toast.loading('Mengunggah gambar...');
+
+      const res = await apiClient.uploadImage(formData).catch(async () => {
+        return await apiClient.uploadBannerImage(formData);
+      });
+
+      toast.dismiss(toastId);
+      const imgPath = res?.image || res?.url || res?.path;
+      if (imgPath) {
+        insertBbCode(`img]${imgPath}[/img`, '');
+        toast.success('Foto berhasil disisipkan');
+      } else {
+        toast.error('Gagal mendapatkan URL gambar');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || 'Gagal mengunggah foto');
+    }
+  };
 
   useEffect(() => {
     if (!chatOpen) setStickerPickerOpen(false);
@@ -205,8 +400,8 @@ const LiveChatWidget = () => {
       const message = String(rawMessage || "").trim();
       if (!message || !user || chatSending) return;
 
-      if (message.length > 300) {
-        setChatError("Pesan terlalu panjang (maksimal 300 karakter)");
+      if (message.length > 3000) {
+        setChatError("Pesan terlalu panjang (maksimal 3000 karakter)");
         return;
       }
 
@@ -249,10 +444,6 @@ const LiveChatWidget = () => {
     const path = String(imagePath || "").trim();
     if (!path) return;
     const message = `${STICKER_MESSAGE_PREFIX}${path}`;
-    if (message.length > 300) {
-      setChatError("Path stiker terlalu panjang");
-      return;
-    }
     setStickerPickerOpen(false);
     await sendChatMessage(message);
   };
@@ -267,7 +458,9 @@ const LiveChatWidget = () => {
   };
 
   return (
-    <div className="fixed bottom-20 right-4 md:bottom-5 md:right-5 z-[70]">
+    <div
+      className="fixed right-4 z-[70] bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:bottom-5 md:right-5"
+    >
       <div
         className={`absolute bottom-[72px] right-0 w-[min(92vw,380px)] rounded-2xl border border-white/20 bg-gray-950/95 text-white shadow-2xl backdrop-blur-xl overflow-hidden transition-all duration-300 ${
           chatOpen
@@ -343,7 +536,7 @@ const LiveChatWidget = () => {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-start gap-3 pl-3">
+                      <div className="flex items-start gap-3 pl-1">
                         <div className="h-10 w-10 rounded-full overflow-hidden shrink-0">
                           {hasImage ? (
                             <img
@@ -421,13 +614,59 @@ const LiveChatWidget = () => {
                 </div>
               </div>
             )}
+
+            {/* BBCode formatting toolbar */}
+            <div className="flex items-center gap-1 pb-1 border-b border-white/10">
+              <button
+                type="button"
+                onClick={() => insertBbCode('b')}
+                className="px-2 py-1 rounded bg-white/5 hover:bg-white/15 text-xs font-bold text-gray-300"
+                title="Teks Tebal [b]"
+              >
+                B
+              </button>
+              <button
+                type="button"
+                onClick={() => insertBbCode('i')}
+                className="px-2 py-1 rounded bg-white/5 hover:bg-white/15 text-xs italic font-serif text-gray-300"
+                title="Teks Miring [i]"
+              >
+                I
+              </button>
+              <button
+                type="button"
+                onClick={() => insertBbCode('s')}
+                className="px-2 py-1 rounded bg-white/5 hover:bg-white/15 text-xs line-through text-gray-300"
+                title="Coret [s]"
+              >
+                S
+              </button>
+              <button
+                type="button"
+                onClick={() => insertBbCode('spoiler')}
+                className="px-2 py-1 rounded bg-white/5 hover:bg-white/15 text-[10px] font-semibold text-red-400 flex items-center gap-1"
+                title="Tambah Spoiler [spoiler]"
+              >
+                <Eye className="h-3 w-3" /> Spoiler
+              </button>
+              <label className="px-2 py-1 rounded bg-white/5 hover:bg-white/15 text-[10px] font-semibold text-gray-300 cursor-pointer flex items-center gap-1">
+                <ImageIcon className="h-3 w-3 text-blue-400" /> Gambar
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleUploadImageFile}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
             <textarea
+              ref={textareaRef}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               rows={3}
-              maxLength={300}
-              placeholder="Tulis pesan…"
-              className="w-full rounded-xl border border-white/10 bg-black/50 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 resize-y min-h-[4.5rem]"
+              placeholder="Tulis pesan..."
+              className="w-full rounded-xl border border-white/10 bg-black/50 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y min-h-[4.5rem]"
             />
             <div className="flex items-center justify-between gap-2 pt-1">
               <button
@@ -443,7 +682,7 @@ const LiveChatWidget = () => {
               <button
                 type="submit"
                 disabled={chatSending || !chatInput.trim()}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-400 to-blue-600 px-4 py-2.5 text-sm font-semibold hover:from-sky-500 hover:to-blue-700 shadow-md shadow-sky-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 <Send className="h-4 w-4" />
                 {chatSending ? "Mengirim..." : "Kirim"}
@@ -455,7 +694,7 @@ const LiveChatWidget = () => {
             <span>Login dulu untuk kirim chat.</span>
             <Link
               to="/akun"
-              className="inline-flex items-center justify-center rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 transition-colors"
+              className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-sky-400 to-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-sky-500/20 hover:from-sky-500 hover:to-blue-700 transition-all"
             >
               Masuk
             </Link>
@@ -473,7 +712,7 @@ const LiveChatWidget = () => {
           type="button"
           onClick={() => setChatOpen((prev) => !prev)}
           aria-label={chatOpen ? "Tutup live chat" : "Buka live chat"}
-          className={`relative h-14 w-14 rounded-full bg-gradient-to-br from-red-600 to-rose-700 text-white shadow-[0_12px_35px_rgba(225,29,72,0.45)] transition-all duration-300 hover:scale-110 active:scale-95 ${
+          className={`relative h-14 w-14 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-[0_12px_35px_rgba(14,165,233,0.45)] transition-all duration-300 hover:scale-110 active:scale-95 ${
             chatOpen ? "rotate-180" : ""
           }`}
         >

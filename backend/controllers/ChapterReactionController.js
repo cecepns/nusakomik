@@ -8,12 +8,23 @@ const getRequestIp = (req) => {
   return req.ip || req.connection?.remoteAddress || 'unknown';
 };
 
+const getAnonymousActorKey = (req) => {
+  const rawDeviceId = req.headers['x-device-id'];
+  if (typeof rawDeviceId === 'string') {
+    const normalized = rawDeviceId.trim();
+    if (/^[a-zA-Z0-9_-]{8,40}$/.test(normalized)) {
+      return `dev:${normalized}`;
+    }
+  }
+  return getRequestIp(req);
+};
+
 const VALID_REACTION_TYPES = ['senang', 'biasaAja', 'kecewa', 'marah', 'sedih'];
 
 const getBySlug = async (req, res) => {
   try {
     const { slug } = req.params;
-    const user_ip = getRequestIp(req);
+    const actorKey = getAnonymousActorKey(req);
 
     const [chapterRows] = await db.execute('SELECT id FROM chapters WHERE slug = ?', [slug]);
 
@@ -41,7 +52,7 @@ const getBySlug = async (req, res) => {
     } else {
       const [uv] = await db.execute(
         'SELECT reaction_type FROM chapter_reactions WHERE chapter_id = ? AND user_ip = ? AND (user_id IS NULL OR user_id = 0)',
-        [chapterId, user_ip]
+        [chapterId, actorKey]
       );
       userReactionRow = uv.length > 0 ? uv[0] : null;
     }
@@ -83,7 +94,7 @@ const submit = async (req, res) => {
       return res.status(400).json({ status: false, error: 'Invalid reaction_type' });
     }
 
-    const user_ip = getRequestIp(req);
+    const actorKey = getAnonymousActorKey(req);
     const userId = req.user ? req.user.id : null;
 
     const [chapterRows] = await db.execute('SELECT id FROM chapters WHERE slug = ?', [slug]);
@@ -94,17 +105,40 @@ const submit = async (req, res) => {
 
     const chapterId = chapterRows[0].id;
 
-    const whereClause = userId
-      ? 'chapter_id = ? AND (user_id = ? OR user_ip = ?)'
-      : 'chapter_id = ? AND user_ip = ? AND (user_id IS NULL OR user_id = 0)';
-    const whereParams = userId ? [chapterId, userId, user_ip] : [chapterId, user_ip];
+    let existing = [];
+    if (userId) {
+      const [byUser] = await db.execute(
+        `SELECT id, reaction_type, user_id
+         FROM chapter_reactions
+         WHERE chapter_id = ? AND user_id = ?
+         LIMIT 1`,
+        [chapterId, userId]
+      );
+      existing = byUser;
 
-    const [existing] = await db.execute(
-      `SELECT id, reaction_type, user_id FROM chapter_reactions WHERE ${whereClause}
-       ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END, id ASC
-       LIMIT 1`,
-      [...whereParams, userId || 0]
-    );
+      // Klaim reaksi anonim dari device ini saat user login (jika belum punya row user_id).
+      if (existing.length === 0) {
+        const [byDevice] = await db.execute(
+          `SELECT id, reaction_type, user_id
+           FROM chapter_reactions
+           WHERE chapter_id = ? AND user_ip = ? AND (user_id IS NULL OR user_id = 0)
+           ORDER BY id ASC
+           LIMIT 1`,
+          [chapterId, actorKey]
+        );
+        existing = byDevice;
+      }
+    } else {
+      const [byDevice] = await db.execute(
+        `SELECT id, reaction_type, user_id
+         FROM chapter_reactions
+         WHERE chapter_id = ? AND user_ip = ? AND (user_id IS NULL OR user_id = 0)
+         ORDER BY id ASC
+         LIMIT 1`,
+        [chapterId, actorKey]
+      );
+      existing = byDevice;
+    }
 
     if (existing.length > 0) {
       const existingRow = existing[0];
@@ -119,7 +153,7 @@ const submit = async (req, res) => {
         if (userId && !isOwnedByUser) {
           await db.execute(
             'UPDATE chapter_reactions SET user_id = ?, user_ip = ? WHERE id = ?',
-            [userId, user_ip, existingRow.id]
+            [userId, actorKey, existingRow.id]
           );
         }
 
@@ -128,7 +162,7 @@ const submit = async (req, res) => {
 
       await db.execute(
         'UPDATE chapter_reactions SET reaction_type = ?, user_id = ?, user_ip = ? WHERE id = ?',
-        [reaction_type, userId, user_ip, existingRow.id]
+        [reaction_type, userId, actorKey, existingRow.id]
       );
       return res.json({
         status: true,
@@ -143,13 +177,13 @@ const submit = async (req, res) => {
       await db.execute(
         `INSERT INTO chapter_reactions (chapter_id, reaction_type, user_id, user_ip)
          VALUES (?, ?, ?, ?)`,
-        [chapterId, reaction_type, userId, user_ip]
+        [chapterId, reaction_type, userId, actorKey]
       );
     } else {
       await db.execute(
         `INSERT INTO chapter_reactions (chapter_id, reaction_type, user_ip)
          VALUES (?, ?, ?)`,
-        [chapterId, reaction_type, user_ip]
+        [chapterId, reaction_type, actorKey]
       );
     }
     return res.json({ status: true, message: 'Reaction recorded', action: 'added' });
