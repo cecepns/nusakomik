@@ -8,12 +8,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.jpg', 'apple-touch-icon.png'],
+      includeAssets: ['favicon.jpg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
-        name: 'KomikNesia',
-        short_name: 'KomikNesia',
+        name: 'Nusakomik',
+        short_name: 'Nusakomik',
         description: 'Baca komik, manga, manhwa, dan manhua bahasa Indonesia.',
-        theme_color: '#ffffff',
+        theme_color: '#000000',
         background_color: '#000000',
         display: 'standalone',
         orientation: 'portrait',

@@ -1,7 +1,7 @@
 const db = require('../db');
 
 const DEFAULT_SITE_URL = 'https://id.komiknesia.net';
-const DEFAULT_API_URL = 'https://api-be.komiknesia.my.id';
+const DEFAULT_API_URL = 'https://api-be.nusakomik.com';
 
 const normalizeUrl = (url, fallback) => {
   const raw = (url || '').trim();
