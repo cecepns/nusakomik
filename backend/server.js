@@ -9,7 +9,9 @@ const fs = require('fs');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
-const { JWT_SECRET } = require('./middlewares/auth');
+const { JWT_SECRET, authenticateToken } = require('./middlewares/auth');
+const { upload } = require('./middlewares/upload');
+const CommentController = require('./controllers/CommentController');
 
 const authRoutes = require('./routes/authRoutes');
 const categoriesRoutes = require('./routes/categoriesRoutes');
@@ -40,6 +42,7 @@ const liveChatRoutes = require('./routes/liveChatRoutes');
 const imageProxyRoutes = require('./routes/imageProxyRoutes');
 const migrationRoutes = require('./routes/migrationRoutes');
 const scrapperSyncRoutes = require('./routes/scrapperSyncRoutes');
+const komiknesiaSyncRoutes = require('./routes/komiknesiaSyncRoutes');
 const { toProxiedImagePathIfNeeded } = require('./utils/ikiruCdnImage');
 const { CHAPTER_RELEASED_WHERE, isScheduledReleaseInFuture } = require('./utils/chapterRelease');
 const { validateApiOrigin } = require('./middlewares/validateApiOrigin');
@@ -47,7 +50,7 @@ const { validateApiOrigin } = require('./middlewares/validateApiOrigin');
 const app = express();
 app.set('trust proxy', 1);
 const server = http.createServer(app);
-const PORT = 3001;
+const PORT = 3002;
 
 // Middleware
 const allowedOrigins = [
@@ -57,8 +60,16 @@ const allowedOrigins = [
   'https://komiknesia.net',
   'https://www.komiknesia.asia',
   'https://02.komiknesia.asia',
-  'https://www.02.komiknesia.asia', // pastikan versi www juga ada
+  'https://www.02.komiknesia.asia',
+  'https://03.komiknesia.asia',
+  'https://www.03.komiknesia.asia',
   'https://id.komiknesia.net',
+  'https://id.nusakomik.com',
+  'https://www.id.nusakomik.com',
+  'https://nusakomik.id',
+  'https://www.nusakomik.id',
+  'https://komiknesia.site',
+  'https://www.komiknesia.site',
   'https://v1.komiknesiaku.com',
   'https://v2.komiknesia.site',
   'https://v3.komiknesia.site',
@@ -252,6 +263,8 @@ app.use('/api/admin/ikiru-sync', ikiruSyncRoutes);
 app.use('/api/admin/apkomik-sync', apkomikSyncRoutes);
 app.use('/api/admin/migration', migrationRoutes);
 app.use('/api/admin/scrapper-sync', scrapperSyncRoutes);
+app.use('/api/admin/komiknesia-sync', komiknesiaSyncRoutes);
+app.post('/api/upload-image', authenticateToken, upload.single('image'), CommentController.uploadImage);
 app.use('/', sitemapRoutes);
 
 

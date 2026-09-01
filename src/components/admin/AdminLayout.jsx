@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Hop as Home, BookOpen, List, FileText, Menu, X, ChartBar as BarChart3, Mail, LogOut, Users, ReceiptText, Sticker, Link2, Image as ImageIcon } from 'lucide-react';
+import { Hop as Home, BookOpen, List, FileText, Menu, X, ChartBar as BarChart3, Mail, LogOut, Users, ReceiptText, Sticker, Link2, Image as ImageIcon, Database } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const AdminLayout = ({ children }) => {
@@ -16,6 +16,7 @@ const AdminLayout = ({ children }) => {
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/admin/dashboard' },
+    { id: 'komiknesia-sync', label: 'Sync Komiknesia', icon: Database, path: '/admin/komiknesia-sync' },
     { id: 'categories', label: 'Kategori', icon: List, path: '/admin/categories' },
     { id: 'manga', label: 'Manga', icon: BookOpen, path: '/admin/manga' },
     { id: 'banners', label: 'Banner Slider', icon: ImageIcon, path: '/admin/banners' },

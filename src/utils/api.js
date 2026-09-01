@@ -349,58 +349,25 @@ class APIClient {
     });
   }
 
-  async uploadBannerImage(formData) {
-    const token = this.getAuthToken();
-    const turnstileToken = this.getTurnstileToken();
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    if (turnstileToken) {
-      headers['x-turnstile-token'] = turnstileToken;
-    }
-    const response = await fetch(`${API_BASE_URL}/settings/upload-banner`, {
+  uploadBannerImage(formData) {
+    return this.request('/settings/upload-banner', {
       method: 'POST',
-      headers,
       body: formData,
     });
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || errData.message || 'Upload banner gagal');
-    }
-    return await response.json();
   }
 
   async uploadImage(formData) {
-    const token = this.getAuthToken();
-    const turnstileToken = this.getTurnstileToken();
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    if (turnstileToken) {
-      headers['x-turnstile-token'] = turnstileToken;
-    }
-    // Attempt uploading to backend upload endpoint
-    const response = await fetch(`${API_BASE_URL}/comments/upload-image`, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
-    if (!response.ok) {
-      // Fallback endpoint if comments/upload-image is at /upload
-      const fallbackResponse = await fetch(`${API_BASE_URL}/upload-image`, {
+    try {
+      return await this.request('/comments/upload-image', {
         method: 'POST',
-        headers,
         body: formData,
       });
-      if (!fallbackResponse.ok) {
-        const errData = await fallbackResponse.json().catch(() => ({}));
-        throw new Error(errData.error || errData.message || 'Upload gambar gagal');
-      }
-      return await fallbackResponse.json();
+    } catch (err) {
+      return await this.request('/upload-image', {
+        method: 'POST',
+        body: formData,
+      });
     }
-    return await response.json();
   }
 
   deleteAdminPremiumOrder(id) {
@@ -1222,6 +1189,47 @@ class APIClient {
   abortMigration(taskId) {
     return this.request(`/admin/migration/abort/${taskId}`, {
       method: 'POST',
+    });
+  }
+
+  // Komiknesia DB Sync
+  getKomiknesiaSyncStatus() {
+    return this.request('/admin/komiknesia-sync/status');
+  }
+
+  getKomiknesiaSourceFeed({ page = 1, limit = 20, search = '', contentType = '', status = '', sinceHours = 0 } = {}) {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+      ...(search ? { search } : {}),
+      ...(contentType ? { contentType } : {}),
+      ...(status ? { status } : {}),
+      ...(sinceHours ? { sinceHours: String(sinceHours) } : {}),
+    });
+    return this.request(`/admin/komiknesia-sync/source-feed?${params.toString()}`);
+  }
+
+  syncKomiknesiaLatest({ limit = 50, sinceHours = null, latestOnly = false } = {}) {
+    return this.request('/admin/komiknesia-sync/sync-latest', {
+      method: 'POST',
+      body: JSON.stringify({ limit, sinceHours, latestOnly }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  syncKomiknesiaSelected(slugs, { latestOnly = false } = {}) {
+    return this.request('/admin/komiknesia-sync/sync-selected', {
+      method: 'POST',
+      body: JSON.stringify({ slugs, latestOnly }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  syncKomiknesiaBySlug(slug, { latestOnly = false } = {}) {
+    return this.request(`/admin/komiknesia-sync/sync-slug/${encodeURIComponent(slug)}`, {
+      method: 'POST',
+      body: JSON.stringify({ latestOnly }),
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 }

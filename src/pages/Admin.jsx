@@ -14,6 +14,7 @@ import UserManager from './admin/UserManager';
 import OrderManager from './admin/OrderManager';
 import StickerManager from './admin/StickerManager';
 import MangaMigration from './admin/MangaMigration';
+import KomiknesiaSync from './admin/KomiknesiaSync';
 
 const Admin = () => {
   return (
@@ -31,6 +32,7 @@ const Admin = () => {
         <Route path="ikiru-sync" element={<IkiruSync />} />
         <Route path="apkomik-sync" element={<ApkomikSync />} />
         <Route path="migration" element={<MangaMigration />} />
+        <Route path="komiknesia-sync" element={<KomiknesiaSync />} />
         <Route path="users" element={<UserManager />} />
         <Route path="orders" element={<OrderManager />} />
         <Route path="stickers" element={<StickerManager />} />
