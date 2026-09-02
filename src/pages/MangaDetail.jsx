@@ -61,10 +61,11 @@ const MangaDetail = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  const { loginOpen, openChapter, handleLoginSuccess, closeLogin } = useChapterAccess();
+  const { loginOpen, setLoginOpen, openChapter, handleLoginSuccess, closeLogin } = useChapterAccess();
   const [manga, setManga] = useState(null);
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkChecking, setBookmarkChecking] = useState(false);
+  const [readlistPickerOpen, setReadlistPickerOpen] = useState(false);
   const [readlistsForPicker, setReadlistsForPicker] = useState([]);
   const [readlistsPickerLoading, setReadlistsPickerLoading] = useState(false);
   const [readlistAddSubmitting, setReadlistAddSubmitting] = useState(null);
@@ -792,7 +793,7 @@ const MangaDetail = () => {
 
                 {recommendedLoading ? (
                   <div className="py-12 text-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-red-600 mx-auto mb-2" />
+                    <Loader2 className="h-8 w-8 animate-spin text-sky-500 mx-auto mb-2" />
                     <p className="text-gray-400 text-xs">Memuat komik rekomendasi...</p>
                   </div>
                 ) : recommendedManga.length === 0 ? (
@@ -814,7 +815,7 @@ const MangaDetail = () => {
                           />
                         </div>
                         <div className="p-3">
-                          <h3 className="text-xs font-bold text-white line-clamp-2 group-hover:text-red-400 transition-colors">
+                          <h3 className="text-xs font-bold text-white line-clamp-2 group-hover:text-sky-400 transition-colors">
                             {rec.title}
                           </h3>
                         </div>
@@ -1176,7 +1177,7 @@ const MangaDetail = () => {
             {/* Header */}
             <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-red-600/20 text-red-500 border border-red-500/30">
+                <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30">
                   <ListChecks className="h-5 w-5" />
                 </div>
                 <div>
@@ -1208,12 +1209,12 @@ const MangaDetail = () => {
                   value={newReadlistTitle}
                   onChange={(e) => setNewReadlistTitle(e.target.value)}
                   maxLength={100}
-                  className="flex-1 rounded-xl bg-white/5 border border-white/10 px-3.5 py-2 text-xs sm:text-sm text-white placeholder-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 transition-all"
+                  className="flex-1 rounded-xl bg-white/5 border border-white/10 px-3.5 py-2 text-xs sm:text-sm text-white placeholder-gray-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all"
                 />
                 <button
                   type="submit"
                   disabled={creatingNewReadlist || !newReadlistTitle.trim()}
-                  className="flex items-center gap-1.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white px-3.5 py-2 text-xs font-bold transition-all shadow-md active:scale-95 shrink-0"
+                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-400 to-blue-600 hover:from-sky-500 hover:to-blue-700 disabled:opacity-50 text-white px-3.5 py-2 text-xs font-bold transition-all shadow-md shadow-sky-500/20 active:scale-95 shrink-0"
                 >
                   {creatingNewReadlist ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -1234,7 +1235,7 @@ const MangaDetail = () => {
             <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar min-h-[120px] max-h-[260px]">
               {readlistsPickerLoading ? (
                 <div className="flex flex-col items-center justify-center py-8 text-gray-400">
-                  <Loader2 className="h-6 w-6 animate-spin text-red-500 mb-2" />
+                  <Loader2 className="h-6 w-6 animate-spin text-sky-400 mb-2" />
                   <p className="text-xs">Memuat readlist...</p>
                 </div>
               ) : readlistsForPicker.length === 0 ? (
@@ -1252,10 +1253,10 @@ const MangaDetail = () => {
                       type="button"
                       onClick={() => addMangaToReadlist(rl.id)}
                       disabled={isSubmitting}
-                      className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-red-500/40 transition-all text-left group"
+                      className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-sky-500/40 transition-all text-left group"
                     >
                       <div className="min-w-0 pr-3">
-                        <p className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-red-400 transition-colors">
+                        <p className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-sky-400 transition-colors">
                           {rl.title}
                         </p>
                         <p className="text-[11px] text-gray-400">
@@ -1264,9 +1265,9 @@ const MangaDetail = () => {
                       </div>
                       <div className="shrink-0">
                         {isSubmitting ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-red-500" />
+                          <Loader2 className="h-4 w-4 animate-spin text-sky-400" />
                         ) : (
-                          <div className="p-1.5 rounded-lg bg-white/10 group-hover:bg-red-600 text-white transition-colors">
+                          <div className="p-1.5 rounded-lg bg-white/10 group-hover:bg-gradient-to-r group-hover:from-sky-400 group-hover:to-blue-600 text-white transition-colors">
                             <Plus className="h-3.5 w-3.5" />
                           </div>
                         )}
