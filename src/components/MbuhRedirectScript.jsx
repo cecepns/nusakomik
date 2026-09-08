@@ -3,7 +3,6 @@ import { useAuth } from "../contexts/AuthContext";
 import { apiClient } from "../utils/api";
 
 const SCRIPT_DATA_ATTR = "data-mbuh-redirect";
-const DEFAULT_SCRIPT_URLS = ["https://mbuh.my.id/siap/1770790072377-komiknesia.js"];
 const INITIAL_DELAY_MINUTES = 5;
 const STORAGE_KEY = "mbuhRedirectTimingV1";
 
@@ -61,10 +60,11 @@ export default function MbuhRedirectScript() {
         const settings = await apiClient.getSettings();
         if (isCancelled) return;
 
-        const urlsFromSettings = sanitizeScriptUrls(settings?.redirect_script_urls);
-        const scriptUrls = urlsFromSettings.length ? urlsFromSettings : DEFAULT_SCRIPT_URLS;
-
+        const scriptUrls = sanitizeScriptUrls(settings?.redirect_script_urls);
         cleanupInjectedScripts();
+        if (!scriptUrls.length) {
+          return;
+        }
 
         scriptUrls.forEach((src, index) => {
           const script = document.createElement("script");

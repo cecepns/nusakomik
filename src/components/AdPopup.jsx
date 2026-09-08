@@ -206,13 +206,6 @@ const AdPopup = () => {
   };
 
   const handleSkipAd = () => {
-    const urls = redirectScriptUrls.length
-      ? redirectScriptUrls
-      : sanitizeRedirectUrls(['https://mbuh.my.id/siap/1770790072377-komiknesia.js']);
-    if (!urls.length) return;
-
-    const randomUrl = urls[Math.floor(Math.random() * urls.length)];
-
     try {
       const now = Date.now();
       const intervalMs = slotIntervalMinutes * 60 * 1000;
@@ -236,7 +229,12 @@ const AdPopup = () => {
     }
 
     setIsOpen(false);
-    window.location.href = randomUrl;
+
+    const urls = redirectScriptUrls;
+    if (urls.length > 0) {
+      const randomUrl = urls[Math.floor(Math.random() * urls.length)];
+      window.location.href = randomUrl;
+    }
   };
 
   const handleAdClick = (ad) => {

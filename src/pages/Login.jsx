@@ -59,15 +59,15 @@ const Login = () => {
 
   const whatsappHref = adminWhatsapp
     ? `https://wa.me/${adminWhatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(
-        'Halo admin, saya lupa password akun KomikNesia.'
+        'Halo admin, saya lupa password akun NusaKomik.'
       )}`
     : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
       <Helmet>
-        <title>Login | KomikNesia</title>
-        <meta name="description" content="Masuk ke panel administrasi KomikNesia untuk mengelola konten dan pengaturan website." />
+        <title>Login | NusaKomik</title>
+        <meta name="description" content="Masuk ke panel administrasi NusaKomik untuk mengelola konten dan pengaturan website." />
         <meta name="robots" content="noindex, nofollow" />
       </Helmet>
       <div className="w-full max-w-md">
@@ -77,7 +77,7 @@ const Login = () => {
               <LogIn className="h-8 w-8 text-primary-600 dark:text-primary-400" />
             </div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              Komiknesia Admin
+              NusaKomik Admin
             </h1>
             <p className="text-gray-600 dark:text-gray-400">
               Masuk ke panel administrasi

@@ -6,7 +6,6 @@ const POPUP_INITIAL_DELAY_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 30];
 const POPUP_UNLOCK_SECONDS_OPTIONS = [5, 10, 15, 20, 30, 45, 60];
 
 const settingsPublicCache = createShortLivedCache({ ttlMs: 60 * 1000, maxKeys: 8 });
-const DEFAULT_REDIRECT_SCRIPT_URLS = ['https://mbuh.my.id/siap/1770790072377-komiknesia.js'];
 
 const sanitizeScriptUrls = (value) => {
   if (!Array.isArray(value)) return [];
@@ -98,16 +97,13 @@ const show = async (req, res) => {
       const homePopup = parseInt(map.home_popup_interval_minutes, 10);
       const popupInitialDelay = parseInt(map.popup_ads_initial_delay_minutes, 10);
       const popupUnlockSeconds = parseInt(map.popup_ads_unlock_seconds, 10);
-      let redirectScriptUrls = DEFAULT_REDIRECT_SCRIPT_URLS;
+      let redirectScriptUrls = [];
       if (typeof map.redirect_script_urls === 'string' && map.redirect_script_urls.trim()) {
         try {
           const parsed = JSON.parse(map.redirect_script_urls);
-          const sanitized = sanitizeScriptUrls(parsed);
-          if (sanitized.length) {
-            redirectScriptUrls = sanitized;
-          }
+          redirectScriptUrls = sanitizeScriptUrls(parsed);
         } catch {
-          redirectScriptUrls = DEFAULT_REDIRECT_SCRIPT_URLS;
+          redirectScriptUrls = [];
         }
       }
 
@@ -164,7 +160,7 @@ const show = async (req, res) => {
       home_popup_interval_minutes: 30,
       popup_ads_initial_delay_minutes: 5,
       popup_ads_unlock_seconds: 10,
-      redirect_script_urls: DEFAULT_REDIRECT_SCRIPT_URLS,
+      redirect_script_urls: [],
       quick_links: DEFAULT_QUICK_LINKS,
     });
   }
